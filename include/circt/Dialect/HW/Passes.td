@@ -195,4 +195,20 @@ def HWConvertBitcasts : Pass<"hw-convert-bitcasts", "mlir::ModuleOp"> {
 }
 
 
+def UhdiVerilogSnapshot :
+    Pass<"hw-uhdi-verilog-snapshot", "hw::HWModuleOp"> {
+  let summary = "Record Verilog-side signal names onto stamped dbg.* ops";
+  let description = [{
+    For every `dbg.*` op stamped by `firrtl-uhdi-init`, attach a
+    `uhdi.repr_entry` dict recording the op's Verilog-level signal name.
+    EmitUHDI reads this to populate each variable's
+    `representations.verilog.name`.
+
+    Must run after `PrettifyVerilogNames` (so `hw.verilogName` is final)
+    and before `ExportVerilog` / `EmitUHDI`.
+  }];
+  let dependentDialects = ["debug::DebugDialect", "hw::HWDialect",
+                           "sv::SVDialect"];
+}
+
 #endif // CIRCT_DIALECT_HW_PASSES_TD
