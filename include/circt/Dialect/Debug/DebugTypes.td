@@ -44,4 +44,15 @@ def EnumDefType : DebugTypeDef<"EnumDef"> {
   let description = "The result of a `dbg.enumdef` operation.";
 }
 
+def ExpressionType : DebugTypeDef<"Expression"> {
+  let mnemonic = "expression";
+  let summary = "debug expression handle";
+  let description = [{
+    The result of a `dbg.expression` operation. Used as an SSA handle so
+    one expression can be an operand of another (recursive compound
+    guards), without polluting the surrounding HW dialect with debug-only
+    Value types.
+  }];
+}
+
 #endif // CIRCT_DIALECT_DEBUG_DEBUGTYPES_TD

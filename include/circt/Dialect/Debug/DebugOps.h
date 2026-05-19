@@ -34,6 +34,29 @@ inline EnumDefContentKey getEnumDefContentKey(EnumDefOp op) {
   return {op.getEnumTypeNameAttr(), op.getFqnAttr(), op.getVariantsMapAttr()};
 }
 
+/// UHDI attr names stamped on dbg.* ops by uhdi-init / verilog-snapshot
+/// and consumed by EmitUHDI.
+inline constexpr llvm::StringLiteral kUhdiStableIdAttr = "uhdi.stable_id";
+inline constexpr llvm::StringLiteral kUhdiReprEntryAttr = "uhdi.repr_entry";
+inline constexpr llvm::StringLiteral kUhdiVerilogRepr = "verilog";
+/// Sentinel placed in `guardRef` when capture-when cannot reduce a compound
+/// when-guard to a single name. Resolvers treat it as an explicit "complex
+/// guard" marker rather than an unknown reference.
+inline constexpr llvm::StringLiteral kUhdiComplexGuardSentinel = "<complex>";
+/// Sentinel placed in `valueRef` when capture-when sees a constant- or
+/// temp-wire-driven connect with no source-level dbg.variable naming it.
+/// Resolvers treat it as an explicit "constant source" marker.
+inline constexpr llvm::StringLiteral kUhdiConstSentinel = "<const>";
+
+/// Walk every `dbg.rootblock` and diagnose statement-tree references
+/// (varRef / valueRef / guardRef) that don't resolve to a `dbg.variable`
+/// in the enclosing module. Returns the diagnostic count.
+///
+/// Not a verifier hook: literal-string fallback is *intentional* for
+/// mem-port subfields, XMR refs, and names capture-when synthesises
+/// before the corresponding `dbg.variable` exists.
+unsigned verifyUhdiStatementRefs(mlir::Operation *root);
+
 } // namespace debug
 } // namespace circt
 
