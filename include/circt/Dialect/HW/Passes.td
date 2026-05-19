@@ -204,8 +204,12 @@ def UhdiVerilogSnapshot :
     EmitUHDI reads this to populate each variable's
     `representations.verilog.name`.
 
-    Must run after `PrettifyVerilogNames` (so `hw.verilogName` is final)
-    and before `ExportVerilog` / `EmitUHDI`.
+    Must run after `PrettifyVerilogNames` and before `ExportVerilog` /
+    `EmitUHDI`.  Note: this is a best-effort cache — `legalizeGlobalNames`
+    (which runs inside `ExportVerilog`) may rename collision-conflicting wires
+    after the snapshot is taken.  `EmitUHDI` therefore performs live name
+    resolution via `bestVerilogName` as the authoritative source of truth and
+    falls back to the snapshot only when that walk is inconclusive.
   }];
   let dependentDialects = ["debug::DebugDialect", "hw::HWDialect",
                            "sv::SVDialect"];
