@@ -122,6 +122,15 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
       {/*preserveAggregate=*/opt.getPreserveAggregate(),
        /*preserveMemory=*/firrtl::PreserveAggregate::None}));
 
+  // Capture the when/connect tree into a dbg.rootblock before ExpandWhens
+  // flattens it. The second UhdiInit run (post-Inliner) picks up dbg.scope
+  // ops created by inlining.
+  if (opt.shouldEnableUhdi()) {
+    auto &modulePM = pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>();
+    modulePM.addPass(firrtl::createUhdiInit());
+    modulePM.addPass(firrtl::createUhdiCaptureWhen());
+  }
+
   {
     auto &modulePM = pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>();
     modulePM.addPass(firrtl::createExpandWhens());
@@ -147,6 +156,12 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createProbesToSignals());
 
   pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInliner());
+
+  // Stamp uhdi.stable_id on every dbg.* op. Runs after Inliner so that
+  // dbg.scope ops created for inlined modules get an id too.
+  if (opt.shouldEnableUhdi())
+    pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
+        firrtl::createUhdiInit());
 
   pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
       firrtl::createLayerMerge());
@@ -382,6 +397,12 @@ populatePrepareForExportVerilog(mlir::PassManager &pm,
   // Tidy up the IR to improve verilog emission quality.
   if (!opt.shouldDisableOptimization())
     pm.nest<hw::HWModuleOp>().addPass(sv::createPrettifyVerilog());
+
+  // Snapshot Verilog-side names onto stamped dbg.* ops so the EmitUHDI
+  // pass can populate representations.verilog.name. Must run after
+  // PrettifyVerilog (hw.verilogName is final) and before EmitUHDI.
+  if (opt.shouldEnableUhdi())
+    pm.nest<hw::HWModuleOp>().addPass(hw::createUhdiVerilogSnapshot());
 
   if (opt.shouldStripFirDebugInfo())
     pm.addPass(circt::createStripDebugInfoWithPredPass([](mlir::Location loc) {
@@ -835,7 +856,7 @@ circt::firtool::FirtoolOptions::FirtoolOptions()
       probesToSignals(false),
       preserveAggregate(firrtl::PreserveAggregate::None),
       preserveMode(firrtl::PreserveValues::None), enableDebugInfo(false),
-      buildMode(BuildModeRelease), disableLayerSink(false),
+      enableUhdi(false), buildMode(BuildModeRelease), disableLayerSink(false),
       disableOptimization(false), vbToBV(false), noDedup(false),
       dedupClasses(true), companionMode(firrtl::CompanionMode::Bind),
       noViews(false), disableAggressiveMergeConnections(false),
