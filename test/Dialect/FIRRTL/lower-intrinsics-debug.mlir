@@ -113,6 +113,52 @@ firrtl.circuit "BundleEnumFieldTest" {
 
 // -----
 
+// Bundle with a true FEnumType field -- FEnumType::isGround() returns false,
+// so the field must be routed through the FEnumType case in build(), not
+// dropped by the FIRRTLBaseType fallback.
+
+// CHECK-LABEL: firrtl.module @BundleFEnumFieldTest
+firrtl.circuit "BundleFEnumFieldTest" {
+  firrtl.module @BundleFEnumFieldTest(
+      in %in: !firrtl.uint<8>,
+      out %out: !firrtl.uint<8>) {
+
+    // CHECK: %[[E:.+]] = dbg.enumdef "MyState", fqn "pkg.MyState$", {Idle = 0 : i64, Run = 1 : i64}
+    firrtl.int.generic "circt_debug_enumdef"
+      <typeName: none = "MyState", fqn: none = "pkg.MyState$",
+       variants: none = "[{\"name\":\"Idle\",\"value\":\"0\"},{\"name\":\"Run\",\"value\":\"1\"}]">
+      : () -> ()
+
+    %io = firrtl.wire : !firrtl.bundle<state: enum<Idle: uint<0>, Run: uint<0>>, data: uint<8>>
+
+    // CHECK-NOT: circt_debug_subfield
+    // CHECK-NOT: dbg.variable "state"
+    firrtl.int.generic "circt_debug_subfield"
+      <name: none = "io.state", typeName: none = "UInt", parent: none = "io",
+       enumTypeName: none = "MyState", enumFqn: none = "pkg.MyState$">
+      %io : (!firrtl.bundle<state: enum<Idle: uint<0>, Run: uint<0>>, data: uint<8>>) -> ()
+
+    // CHECK-NOT: dbg.variable "data"
+    firrtl.int.generic "circt_debug_subfield"
+      <name: none = "io.data", typeName: none = "UInt", parent: none = "io">
+      %io : (!firrtl.bundle<state: enum<Idle: uint<0>, Run: uint<0>>, data: uint<8>>) -> ()
+
+    // CHECK:      firrtl.subfield %{{.*}}[state]
+    // CHECK:      dbg.subfield "io.state", %{{.*}} typeName "UInt" enumDef %[[E]] : !firrtl.enum<Idle, Run>
+    // CHECK:      firrtl.subfield %{{.*}}[data]
+    // CHECK:      dbg.subfield "io.data", %{{.*}} typeName "UInt" : !firrtl.uint<8>
+    // CHECK:      dbg.struct
+    // CHECK:      dbg.variable "io", %{{.*}} typeName "MyBundle"
+    firrtl.int.generic "circt_debug_var"
+      <name: none = "io", typeName: none = "MyBundle">
+      %io : (!firrtl.bundle<state: enum<Idle: uint<0>, Run: uint<0>>, data: uint<8>>) -> ()
+
+    firrtl.connect %out, %in : !firrtl.uint<8>, !firrtl.uint<8>
+  }
+}
+
+// -----
+
 // Bundle with a FixedPoint field carrying type parameters.
 // Verifies that the "params" JSON string is parsed and forwarded to
 // dbg.subfield as an ArrayAttr of DictionaryAttrs.
@@ -541,5 +587,40 @@ firrtl.circuit "ZeroOperandVarNode" {
     // CHECK: dbg.variable "mynode", %mynode typeName "UInt" : !firrtl.uint<8>
     firrtl.int.generic "circt_debug_var"
       <name: none = "mynode", typeName: none = "UInt"> : () -> ()
+  }
+}
+
+// -----
+
+// Width-aware enumdef: optional `width` sizes variant IntegerAttrs (here
+// uint<2> -> i2). Without `width`, the i64 fallback keeps existing tests.
+
+// CHECK-LABEL: firrtl.module @EnumDefWithWidth
+firrtl.circuit "EnumDefWithWidth" {
+  firrtl.module @EnumDefWithWidth() {
+    // i2-typed IntegerAttrs print high-bit values as signed (2 -> -2);
+    // downstream consumers (EmitUHDI / EmitHGLDD) read the bit pattern.
+    // CHECK: dbg.enumdef "AluOp", fqn "pkg.AluOp$", {ADD = 0 : i2, AND = -2 : i2, OR = -1 : i2, SUB = 1 : i2}
+    firrtl.int.generic "circt_debug_enumdef"
+      <typeName: none = "AluOp", fqn: none = "pkg.AluOp$",
+       width: i64 = 2,
+       variants: none = "[{\"name\":\"ADD\",\"value\":\"0\"},{\"name\":\"SUB\",\"value\":\"1\"},{\"name\":\"AND\",\"value\":\"2\"},{\"name\":\"OR\",\"value\":\"3\"}]">
+      : () -> ()
+  }
+}
+
+// -----
+
+// Pins that width=64 variants with value >= 2^63 (upper unsigned half) parse.
+
+// CHECK-LABEL: firrtl.module @EnumDefWideVariantTest
+firrtl.circuit "EnumDefWideVariantTest" {
+  firrtl.module @EnumDefWideVariantTest() {
+    // CHECK: dbg.enumdef "WideEnum", fqn "pkg.WideEnum$", {TOP = -9223372036854775808 : i64, ZERO = 0 : i64}
+    firrtl.int.generic "circt_debug_enumdef"
+      <typeName: none = "WideEnum", fqn: none = "pkg.WideEnum$",
+       width: i64 = 64,
+       variants: none = "[{\"name\":\"ZERO\",\"value\":\"0\"},{\"name\":\"TOP\",\"value\":\"9223372036854775808\"}]">
+      : () -> ()
   }
 }
