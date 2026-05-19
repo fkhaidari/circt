@@ -15,6 +15,7 @@
 #include "circt/Analysis/FIRRTLInstanceInfo.h"
 #include "circt/Analysis/OpCountAnalysis.h"
 #include "circt/Analysis/SchedulingAnalysis.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/HW/HWInstanceGraph.h"
 #include "circt/Scheduling/Problems.h"
@@ -336,7 +337,34 @@ void TestCombIntegerRangeAnalysisPass::runOnOperation() {
 
 namespace circt {
 namespace test {
+//===----------------------------------------------------------------------===//
+// UHDI statement-tree ref verifier
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct TestVerifyUhdiRefsPass
+    : public PassWrapper<TestVerifyUhdiRefsPass,
+                         OperationPass<mlir::ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestVerifyUhdiRefsPass)
+
+  void runOnOperation() override {
+    // Discard count: this pass is informational, not a hard verifier.
+    // Test failure is signalled by --verify-diagnostics, not pass exit status.
+    (void)debug::verifyUhdiStatementRefs(getOperation());
+    markAllAnalysesPreserved();
+  }
+  StringRef getArgument() const override { return "test-verify-uhdi-refs"; }
+  StringRef getDescription() const override {
+    return "Verify UHDI statement-tree refs resolve to dbg.variable / "
+           "dbg.expression in their enclosing scope";
+  }
+};
+} // namespace
+
 void registerAnalysisTestPasses() {
+  registerPass([]() -> std::unique_ptr<Pass> {
+    return std::make_unique<TestVerifyUhdiRefsPass>();
+  });
   registerPass([]() -> std::unique_ptr<Pass> {
     return std::make_unique<TestDependenceAnalysisPass>();
   });
