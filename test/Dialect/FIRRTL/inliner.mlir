@@ -1624,3 +1624,89 @@ firrtl.circuit "InlineBothModules" {
     %xmr = sv.xmr.ref @path : !hw.inout<i5>
   }
 }
+
+// -----
+
+// dbg.rootblock / dbg.subblock must clone under each inlined site so the UHDI
+// statement tree survives. Two inline sites produce two rootblocks under the
+// caller — this is intentional; downstream UhdiInit/EmitUHDI handle the merge.
+
+// CHECK-LABEL: firrtl.circuit "InlineDbgRootBlock"
+firrtl.circuit "InlineDbgRootBlock" {
+  firrtl.module private @Child() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    dbg.rootblock {
+      dbg.subblock conditionRef #dbg.varref<"g"> {
+        dbg.connect_stmt #dbg.varref<"v"> = #dbg.varref<"src">
+      }
+    }
+  }
+  // CHECK: firrtl.module @InlineDbgRootBlock
+  firrtl.module @InlineDbgRootBlock() {
+    // Both instances are inlined, so each rootblock clones into the parent and
+    // is attached to the per-instance dbg.scope created by the inliner.
+    // CHECK: [[SCOPE_C0:%.+]] = dbg.scope "c0", "Child"
+    // CHECK-NEXT: dbg.rootblock scope [[SCOPE_C0]]
+    // CHECK-NEXT: dbg.subblock conditionRef #dbg.varref<"g">
+    // CHECK-NEXT: dbg.connect_stmt #dbg.varref<"v"> = #dbg.varref<"src">
+    // CHECK: [[SCOPE_C1:%.+]] = dbg.scope "c1", "Child"
+    // CHECK-NEXT: dbg.rootblock scope [[SCOPE_C1]]
+    // CHECK-NEXT: dbg.subblock conditionRef #dbg.varref<"g">
+    // CHECK-NEXT: dbg.connect_stmt #dbg.varref<"v"> = #dbg.varref<"src">
+    firrtl.instance c0 @Child()
+    firrtl.instance c1 @Child()
+  }
+}
+
+// -----
+
+// A subblock whose condition is a materialised dbg.expression keeps pointing
+// at its own copy after inlining. The link is an SSA operand, so the inliner's
+// value mapping reattaches it while cloning; nothing depends on the expression
+// name surviving unchanged.
+
+// CHECK-LABEL: firrtl.circuit "InlineDbgExprGuard"
+firrtl.circuit "InlineDbgExprGuard" {
+  firrtl.module private @WithExpr(in %en: !firrtl.uint<1>) attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    // dbg.expression at module-body level, referencing a port value.
+    %expr = dbg.expression "__uhdi_expr_WithExpr_0", opcode "&", operands(%en : !firrtl.uint<1>)
+    dbg.rootblock {
+      dbg.subblock condition %expr {
+        dbg.connect_stmt #dbg.varref<"v"> = #dbg.varref<"src">
+      }
+    }
+  }
+  // CHECK: firrtl.module @InlineDbgExprGuard
+  firrtl.module @InlineDbgExprGuard(in %en: !firrtl.uint<1>) {
+    // CHECK: [[EXPR:%.+]] = dbg.expression
+    // CHECK: dbg.subblock condition [[EXPR]]
+    firrtl.instance c0 @WithExpr(in en: !firrtl.uint<1>)
+  }
+}
+
+// -----
+
+// Two inline sites, each with its own materialised expression: every cloned
+// subblock must point at the copy from its own site. A name-based link cannot
+// express this -- both copies carry the same name -- while an SSA operand
+// distinguishes them by construction.
+
+// CHECK-LABEL: firrtl.circuit "InlineDbgExprTwoSites"
+firrtl.circuit "InlineDbgExprTwoSites" {
+  firrtl.module private @WithExpr(in %en: !firrtl.uint<1>) attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    %expr = dbg.expression "__uhdi_expr_WithExpr_0", opcode "&", operands(%en : !firrtl.uint<1>)
+    dbg.rootblock {
+      dbg.subblock condition %expr {
+        dbg.connect_stmt #dbg.varref<"v"> = #dbg.varref<"src">
+      }
+    }
+  }
+  // CHECK: firrtl.module @InlineDbgExprTwoSites
+  firrtl.module @InlineDbgExprTwoSites(in %en: !firrtl.uint<1>) {
+    // CHECK: [[EXPR0:%.+]] = dbg.expression
+    // CHECK: dbg.subblock condition [[EXPR0]]
+    // CHECK: [[EXPR1:%.+]] = dbg.expression
+    // CHECK: dbg.subblock condition [[EXPR1]]
+    firrtl.instance c0 @WithExpr(in en: !firrtl.uint<1>)
+    firrtl.instance c1 @WithExpr(in en: !firrtl.uint<1>)
+  }
+}
