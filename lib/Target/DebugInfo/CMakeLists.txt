@@ -1,6 +1,7 @@
 add_circt_translation_library(CIRCTTargetDebugInfo
   DumpDebugInfo.cpp
   EmitHGLDD.cpp
+  LocationUtils.cpp
   TranslateRegistration.cpp
 
   LINK_COMPONENTS
