@@ -97,4 +97,19 @@ module {
     dbg.variable "y", %0 enumDef %e1 : i2
     return
   }
+
+  // Block-local canonicalizer: cross-block duplicates are not merged at the IR
+  // level. Analysis-layer dedup in DebugInfoBuilder handles consumer identity.
+  //
+  // CHECK-LABEL: func @TestCrossBlockNotMerged
+  func.func @TestCrossBlockNotMerged(%cond: i1) {
+    // CHECK-COUNT-2: dbg.enumdef "S", fqn "p.S", {A = 0 : i64, B = 1 : i64}
+    %x = dbg.enumdef "S", fqn "p.S", {A = 0 : i64, B = 1 : i64}
+    cf.cond_br %cond, ^bb1, ^bb2
+  ^bb1:
+    %y = dbg.enumdef "S", fqn "p.S", {A = 0 : i64, B = 1 : i64}
+    return
+  ^bb2:
+    return
+  }
 }

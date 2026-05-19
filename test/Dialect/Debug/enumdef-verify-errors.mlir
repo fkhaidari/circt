@@ -60,3 +60,21 @@ func.func @EnumDefEmptyVariants() {
   %e = dbg.enumdef "Empty", fqn "pkg.Empty", {}
   return
 }
+
+// -----
+// dbg.enumdef variant value with signed integer type (si64) must be rejected.
+
+func.func @EnumDefSignedVariant() {
+  // expected-error @+1 {{variant 'A' must have a signless integer value}}
+  %e = dbg.enumdef "MyState", fqn "pkg.MyState$", {A = 0 : si64}
+  return
+}
+
+// -----
+// dbg.enumdef variant value with unsigned integer type (ui64) must be rejected.
+
+func.func @EnumDefUnsignedVariant() {
+  // expected-error @+1 {{variant 'A' must have a signless integer value}}
+  %e = dbg.enumdef "MyState", fqn "pkg.MyState$", {A = 0 : ui64}
+  return
+}

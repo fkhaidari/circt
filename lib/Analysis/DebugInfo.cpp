@@ -170,7 +170,11 @@ void DebugInfoBuilder::visitModule(hw::HWModuleOp moduleOp, DIModule &module) {
           module.enumDefIds.try_emplace(edOp, id);
           DIEnumValMap variants;
           for (auto na : edOp.getVariantsMapAttr()) {
-            auto key = cast<IntegerAttr>(na.getValue()).getInt();
+            // Use getSExtValue() rather than getInt(): getInt() asserts
+            // isSignlessInteger(), but the verifier fires after the builder
+            // runs so signed/unsigned attrs can reach here.
+            auto key =
+                cast<IntegerAttr>(na.getValue()).getValue().getSExtValue();
             auto val = cast<StringAttr>(na.getName());
             variants.insert({key, val});
           }

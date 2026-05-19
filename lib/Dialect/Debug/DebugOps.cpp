@@ -9,7 +9,9 @@
 #include "circt/Dialect/Debug/DebugOps.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/StringSet.h"
 
 using namespace circt;
 using namespace debug;
@@ -174,6 +176,38 @@ LogicalResult EnumDefOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// RootBlockOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verifyBlock(Region &body, Operation *op) {
+  for (auto &block : body) {
+    auto &ops = block.getOperations();
+    auto odd = llvm::find_if_not(ops, [](auto &op) {
+      return isa<SubBlockOp, ConnectStmtOp, DeclStmtOp>(&op);
+    });
+
+    if (odd != ops.end()) {
+      return op->emitOpError() << "body may only contain dbg.subblock, "
+                                  "dbg.connect_stmt, or dbg.decl_stmt; got '"
+                               << odd->getName() << "'";
+    }
+  }
+  return success();
+}
+
+LogicalResult RootBlockOp::verify() {
+  return verifyBlock(getBody(), getOperation());
+}
+
+//===----------------------------------------------------------------------===//
+// SubBlockOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult SubBlockOp::verify() {
+  return verifyBlock(getBody(), getOperation());
+}
+
+//===----------------------------------------------------------------------===//
 // ModuleInfoOp
 //===----------------------------------------------------------------------===//
 
@@ -202,11 +236,14 @@ struct EnumDefDeduplication : public OpRewritePattern<EnumDefOp> {
 
   LogicalResult matchAndRewrite(EnumDefOp op,
                                 PatternRewriter &rewriter) const override {
+    // Block-local: intrusive list order is dominance order within a Block, so
+    // no DominanceInfo is needed. No in-tree producer emits dbg.enumdef across
+    // multiple blocks; any residual cross-block duplicates are collapsed by the
+    // content-key dedup in DebugInfoBuilder (lib/Analysis/DebugInfo.cpp).
     // TODO(perf): O(N^2) per-op scan
     auto opKey = getEnumDefContentKey(op);
     auto opScope = op.getScope();
 
-    // Backward scan: every candidate dominates `op` without a DominanceInfo.
     for (auto *prev = op->getPrevNode(); prev; prev = prev->getPrevNode()) {
       auto otherEnumDef = dyn_cast<EnumDefOp>(prev);
       if (!otherEnumDef)
@@ -226,4 +263,89 @@ struct EnumDefDeduplication : public OpRewritePattern<EnumDefOp> {
 void EnumDefOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                             MLIRContext *context) {
   results.add<EnumDefDeduplication>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// UHDI statement-tree reference check
+//===----------------------------------------------------------------------===//
+
+unsigned debug::verifyUhdiStatementRefs(Operation *root) {
+  unsigned diagnostics = 0;
+
+  // Build the set of dbg.variable / dbg.expression names visible to each
+  // enclosing scope in a single walk over `root`. After ModuleInliner there
+  // may be multiple dbg.rootblock under one parent — caching by parent op
+  // keeps the verifier O(N) over IR size instead of O(rootblocks · N).
+  //
+  // Key is (parentOp, scopeValue): two ops sharing a name but under distinct
+  // dbg.scope handles are separate identities and must not collapse.
+  // Lookup is scope-blind (scans all buckets for the parent) because the
+  // reference ops — SubBlockOp, ConnectStmtOp, DeclStmtOp — carry no scope
+  // operand and have no structural way to name a specific scope bucket.
+  llvm::DenseMap<std::pair<Operation *, Value>, llvm::StringSet<>> knownByScope;
+  root->walk([&](Operation *op) {
+    if (auto var = dyn_cast<VariableOp>(op)) {
+      if (Operation *parent = op->getParentOp())
+        knownByScope[{parent, var.getScope()}].insert(var.getName());
+    } else if (auto expr = dyn_cast<ExpressionOp>(op)) {
+      // `dbg.expression` is a sibling value-tracker for compound when-guards;
+      // count its name so guardRef into a materialised expression doesn't
+      // false-positive.
+      if (Operation *parent = op->getParentOp())
+        knownByScope[{parent, expr.getScope()}].insert(expr.getName());
+    }
+  });
+
+  root->walk([&](RootBlockOp rootBlock) {
+    Operation *enclosingScope = rootBlock->getParentOp();
+    if (!enclosingScope)
+      return;
+    // Count how many distinct scope-buckets under enclosingScope contain each
+    // name. A count > 1 means the name is ambiguous: two expressions/variables
+    // share it under different dbg.scope handles, and the scope-blind lookup
+    // cannot distinguish them.
+    llvm::StringMap<unsigned> knownNameCounts;
+    for (auto &[key, names] : knownByScope)
+      if (key.first == enclosingScope)
+        for (auto &entry : names)
+          ++knownNameCounts[entry.getKey()];
+
+    auto checkRef = [&](Operation *stmt, StringRef refKind, StringRef name) {
+      // The complex-guard sentinel is expected, not a defect.
+      if (name.empty() || name == kUhdiComplexGuardSentinel ||
+          name == kUhdiConstSentinel)
+        return;
+      auto it = knownNameCounts.find(name);
+      if (it == knownNameCounts.end()) {
+        stmt->emitWarning()
+            << "uhdi: statement " << refKind << " '" << name
+            << "' has no matching dbg.variable in the enclosing module; "
+               "the emitter will fall back to the literal name";
+        ++diagnostics;
+        return;
+      }
+      if (it->second >= 2) {
+        stmt->emitWarning()
+            << "uhdi: statement " << refKind << " '" << name
+            << "' is ambiguous: matches expressions/variables under "
+            << it->second
+            << " distinct dbg.scope handles; statement-tree refs are "
+               "scope-blind, picking arbitrary identity";
+        ++diagnostics;
+      }
+    };
+
+    rootBlock.walk([&](Operation *op) {
+      if (auto c = dyn_cast<ConnectStmtOp>(op)) {
+        checkRef(op, "varRef", c.getVarRef());
+        checkRef(op, "valueRef", c.getValueRef());
+      } else if (auto b = dyn_cast<SubBlockOp>(op)) {
+        checkRef(op, "guardRef", b.getGuardRef());
+      } else if (auto d = dyn_cast<DeclStmtOp>(op)) {
+        checkRef(op, "varRef", d.getVarRef());
+      }
+    });
+  });
+
+  return diagnostics;
 }
