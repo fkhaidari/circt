@@ -1624,3 +1624,61 @@ firrtl.circuit "InlineBothModules" {
     %xmr = sv.xmr.ref @path : !hw.inout<i5>
   }
 }
+
+// -----
+
+// dbg.rootblock / dbg.subblock must clone under each inlined site so the UHDI
+// statement tree survives. Two inline sites produce two rootblocks under the
+// caller — this is intentional; downstream UhdiInit/EmitUHDI handle the merge.
+
+// CHECK-LABEL: firrtl.circuit "InlineDbgRootBlock"
+firrtl.circuit "InlineDbgRootBlock" {
+  firrtl.module private @Child() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    dbg.rootblock {
+      dbg.subblock guard "g" {
+        dbg.connect_stmt "v" = "src"
+      }
+    }
+  }
+  // CHECK: firrtl.module @InlineDbgRootBlock
+  firrtl.module @InlineDbgRootBlock() {
+    // Both instances are inlined, so each rootblock clones into the parent.
+    // CHECK: dbg.rootblock
+    // CHECK-NEXT: dbg.subblock guard "g"
+    // CHECK-NEXT: dbg.connect_stmt "v" = "src"
+    // CHECK: dbg.rootblock
+    // CHECK-NEXT: dbg.subblock guard "g"
+    // CHECK-NEXT: dbg.connect_stmt "v" = "src"
+    firrtl.instance c0 @Child()
+    firrtl.instance c1 @Child()
+  }
+}
+
+// -----
+
+// dbg.expression + dbg.subblock guardRef linkage must survive inlining intact.
+// UhdiCaptureWhen emits a dbg.expression (with a generated name) at module-body
+// level; the companion dbg.subblock references it by name via guardRef.  After
+// inlining the expression name must NOT be prefixed — it is a stable linkage
+// key, not a signal name — so the guardRef in the cloned subblock still resolves.
+
+// CHECK-LABEL: firrtl.circuit "InlineDbgExprGuard"
+firrtl.circuit "InlineDbgExprGuard" {
+  firrtl.module private @WithExpr(in %en: !firrtl.uint<1>) attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    // dbg.expression at module-body level, referencing a port value.
+    %expr = dbg.expression "__uhdi_expr_WithExpr_0", opcode "&", operands(%en : !firrtl.uint<1>)
+    dbg.rootblock {
+      dbg.subblock guard "__uhdi_expr_WithExpr_0" {
+        dbg.connect_stmt "v" = "src"
+      }
+    }
+  }
+  // CHECK: firrtl.module @InlineDbgExprGuard
+  firrtl.module @InlineDbgExprGuard(in %en: !firrtl.uint<1>) {
+    // After inlining c0, the expression name must be unchanged (not prefixed)
+    // so that the cloned subblock guardRef still resolves.
+    // CHECK: dbg.expression "[[ENAME:[^"]+]]"
+    // CHECK: dbg.subblock guard "[[ENAME]]"
+    firrtl.instance c0 @WithExpr(in en: !firrtl.uint<1>)
+  }
+}
