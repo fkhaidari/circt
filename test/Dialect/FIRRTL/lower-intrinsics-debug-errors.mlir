@@ -228,3 +228,17 @@ firrtl.circuit "DanglingEnumFqn" {
       %s : (!firrtl.uint<2>) -> ()
   }
 }
+
+// -----
+
+// Wire and memory with the same name 'x': 0-operand debug_var must error
+// rather than silently picking the wire.
+firrtl.circuit "WireMemSameNameAmbiguity" {
+  firrtl.module @WireMemSameNameAmbiguity() {
+    %x = firrtl.wire : !firrtl.uint<8>
+    %x_mem = chirrtl.combmem {name = "x"} : !chirrtl.cmemory<uint<8>, 4>
+    // expected-error @below {{circt_debug_var: name 'x' is ambiguous (matches 2 signals)}}
+    firrtl.int.generic "circt_debug_var"
+      <name: none = "x", typeName: none = "UInt"> : () -> ()
+  }
+}

@@ -865,6 +865,11 @@ struct LeafMeta {
   Value enumDefVal;
   StringAttr typeName;
   ArrayAttr params;
+  // Mirrored on the emitted `dbg.subfield` so EmitUHDI can resolve the
+  // enum-pool entry by FQN when the `dbg.enumdef` is in a different module
+  // (cross-module shared enums; per-module enumDefByFqn cannot bind those).
+  StringAttr enumTypeName;
+  StringAttr enumFqn;
 };
 } // namespace
 using LeafMetaMap = llvm::StringMap<LeafMeta>;
@@ -885,6 +890,9 @@ public:
         .Case<FVectorType>([&](FVectorType t) {
           return buildVector(value, t, parentPath, isRoot);
         })
+        .Case<FEnumType>([&](FEnumType t) -> Value {
+          return wrap(value, parentPath, isRoot);
+        })
         .Case<FIRRTLBaseType>([&](FIRRTLBaseType t) -> Value {
           if (!t.isGround())
             return {};
@@ -901,15 +909,19 @@ private:
     Value enumDef{};
     ArrayAttr params{};
     StringAttr typeName{};
+    StringAttr enumTypeName{};
+    StringAttr enumFqn{};
     if (auto it = leafMetaMap.find(parentPath); it != leafMetaMap.end()) {
       typeName = it->second.typeName;
       params = it->second.params;
       enumDef = it->second.enumDefVal;
+      enumTypeName = it->second.enumTypeName;
+      enumFqn = it->second.enumFqn;
     }
 
     auto nameAttr = StringAttr::get(rewriter.getContext(), parentPath);
     return debug::SubFieldOp::create(rewriter, loc, nameAttr, inner, typeName,
-                                     params, enumDef)
+                                     params, enumDef, enumTypeName, enumFqn)
         .getResult();
   }
 
@@ -1065,13 +1077,18 @@ public:
 
     // Pick leaves belonging to this var from the side-channel list staged
     // by `liftDebugIntrinsics`, keyed by their display path (matches what
-    // `buildDebugAggregateWithMeta` reconstructs).
+    // `buildDebugAggregateWithMeta` reconstructs). FQN is the linkage key:
+    // `parent` must exactly equal the owning var's FQN
+    // (see .claude/rules/uhdi-emitter.md §4).
     LeafMetaMap leafMap;
     StringRef varPath = varName ? varName.getValue() : StringRef{};
     if (!varPath.empty() && ctx.debugLeaves) {
       for (auto entry : *ctx.debugLeaves) {
         auto parentAttr = entry.getAs<StringAttr>("parent");
-        if (!parentAttr || parentAttr.getValue() != varPath)
+        if (!parentAttr)
+          continue;
+        StringRef parent = parentAttr.getValue();
+        if (parent != varPath)
           continue;
         auto pathAttr = entry.getAs<StringAttr>("name");
         if (!pathAttr)
@@ -1079,8 +1096,11 @@ public:
         LeafMeta meta;
         meta.typeName = entry.getAs<StringAttr>("typeName");
         meta.params = entry.getAs<ArrayAttr>("params");
-        meta.enumDefVal =
-            lookupEnumDef(entry.getAs<StringAttr>("enumFqn"), gi.op);
+        meta.enumFqn = entry.getAs<StringAttr>("enumFqn");
+        meta.enumTypeName = entry.getAs<StringAttr>("enumTypeName");
+        // No warnAt: a missing same-module enumdef is now expected for
+        // shared enums; the FQN string above is the cross-module binding.
+        meta.enumDefVal = lookupEnumDef(meta.enumFqn, /*warnAt=*/nullptr);
         leafMap[pathAttr.getValue()] = meta;
       }
     }
@@ -1097,15 +1117,13 @@ public:
     } else if (modOp && varName) {
       StringRef wanted = varName.getValue();
       SmallVector<Value, 2> candidates;
+      bool isMemory = false;
       for (auto [port, arg] :
            llvm::zip(modOp.getPorts(), modOp.getArguments())) {
         if (port.name.getValue() == wanted)
           candidates.push_back(arg);
       }
       if (candidates.empty()) {
-        // Single walk: collect wire/node/reg/regreset candidates and flag
-        // memories; both cases only matter when no port matched.
-        bool isMemory = false;
         modOp.walk([&](Operation *op) {
           TypeSwitch<Operation *>(op)
               .Case<WireOp, NodeOp, RegOp, RegResetOp>([&](auto o) {
@@ -1114,25 +1132,22 @@ public:
               })
               .Case<chirrtl::CombMemOp, chirrtl::SeqMemOp, MemOp>(
                   [&](Operation *memOp) {
-                    // Use generic getAttrOfType because the three op types
-                    // (CombMemOp, SeqMemOp, MemOp) have different native getter
-                    // signatures; a polymorphic attribute lookup is simpler.
                     if (auto nameAttr =
                             memOp->getAttrOfType<StringAttr>("name"))
                       if (nameAttr.getValue() == wanted)
                         isMemory = true;
                   });
         });
-        if (candidates.empty() && isMemory) {
-          // Memory 0-operand debug_var: erase silently (no SSA result to bind).
-          rewriter.eraseOp(gi.op);
-          return;
-        }
       }
-      if (candidates.size() > 1) {
+      size_t totalMatches = candidates.size() + (isMemory ? 1 : 0);
+      if (totalMatches > 1) {
         gi.op->emitError("circt_debug_var: name '")
-            << wanted << "' is ambiguous (matches " << candidates.size()
+            << wanted << "' is ambiguous (matches " << totalMatches
             << " signals)";
+        return;
+      }
+      if (isMemory) {
+        rewriter.eraseOp(gi.op);
         return;
       }
       if (candidates.size() == 1)
@@ -1455,6 +1470,29 @@ LogicalResult processEnumDefIntrinsic(GenericIntrinsicOp op, FModuleOp mod,
     return op.emitError("circt_debug_enumdef: 'variants' is not a JSON array");
 
   auto *ctx = mod.getContext();
+
+  // Variant integer width comes from the optional `width` parameter
+  // (Chisel frontend supplies the enum's bit width). Default to i64 for
+  // pre-existing tests; width 0 keeps the default (i0 is meaningless).
+  unsigned variantWidth = 64;
+  if (auto w = gi.getParamValue<IntegerAttr>("width")) {
+    // Chisel frontend stamps `width` as an unsigned IntParam (BigInt);
+    // use APInt to avoid .getInt()'s signless requirement.
+    // Guard: getZExtValue() asserts if the APInt has more than 64 active bits.
+    if (w.getValue().getActiveBits() > 64)
+      return op.emitError(
+          "circt_debug_enumdef: 'width' parameter exceeds 64 bits");
+    uint64_t wv = w.getValue().getZExtValue();
+    if (wv > 0) {
+      if (wv > IntegerType::kMaxWidth)
+        return op.emitError("circt_debug_enumdef: 'width' exceeds MLIR "
+                            "IntegerType max (")
+               << IntegerType::kMaxWidth << ")";
+      variantWidth = static_cast<unsigned>(wv);
+    }
+  }
+  auto variantIntType = IntegerType::get(ctx, variantWidth);
+
   SmallVector<NamedAttribute> variants;
   for (const auto &item : *arr) {
     auto *obj = item.getAsObject();
@@ -1467,21 +1505,30 @@ LogicalResult processEnumDefIntrinsic(GenericIntrinsicOp op, FModuleOp mod,
       return op.emitError("circt_debug_enumdef: variant is missing 'name'");
 
     // Frontend emits value as a string; tolerate integers for tests.
-    int64_t val = 0;
+    APInt valAP;
     if (auto s = obj->getString("value")) {
-      auto sv = *s;
-      if (sv.getAsInteger(10, val))
+      if (StringRef(*s).getAsInteger(10, valAP))
         return op.emitError("circt_debug_enumdef: variant '")
-               << *varNameOpt << "' has non-integer value '" << sv << "'";
+               << *varNameOpt << "' has non-integer value '" << *s << "'";
     } else if (auto i = obj->getInteger("value")) {
-      val = *i;
+      valAP = APInt(64, static_cast<uint64_t>(*i), /*isSigned=*/true);
     } else {
       return op.emitError("circt_debug_enumdef: variant '")
              << *varNameOpt << "' is missing 'value'";
     }
 
-    variants.push_back({StringAttr::get(ctx, *varNameOpt),
-                        IntegerAttr::get(IntegerType::get(ctx, 64), val)});
+    unsigned checkWidth = std::max(variantWidth + 1, valAP.getBitWidth());
+    APInt valExt = valAP.zextOrTrunc(checkWidth);
+
+    if (!valExt.isIntN(variantWidth))
+      op.emitWarning("circt_debug_enumdef: variant '")
+          << *varNameOpt << "' value " << valExt.getZExtValue()
+          << " does not fit in " << variantWidth
+          << " bits and will be truncated";
+
+    variants.push_back(
+        {StringAttr::get(ctx, *varNameOpt),
+         IntegerAttr::get(variantIntType, valExt.zextOrTrunc(variantWidth))});
   }
 
   auto variantsMap = DictionaryAttr::get(ctx, variants);
@@ -1550,11 +1597,16 @@ LogicalResult processSubfieldIntrinsic(GenericIntrinsicOp op,
   if (auto fqn = gi.getParamValue<StringAttr>("enumFqn");
       fqn && !fqn.getValue().empty())
     fields.push_back({StringAttr::get(ctx, "enumFqn"), fqn});
+  // `enumTypeName` is the bare source-language name (e.g. "AluOp"); kept as
+  // a string mirror of the enumdef linkage so EmitUHDI can resolve the
+  // enum type-pool entry by FQN when the `dbg.enumdef` lives in a different
+  // FIRRTL module (shared enums in multi-module designs).
+  if (auto etn = gi.getParamValue<StringAttr>("enumTypeName");
+      etn && !etn.getValue().empty())
+    fields.push_back({StringAttr::get(ctx, "enumTypeName"), etn});
   if (auto paramsStr = gi.getParamValue<StringAttr>("params"))
     if (auto params = parseParamsJSON(ctx, paramsStr, op))
       fields.push_back({StringAttr::get(ctx, "params"), params});
-  // TODO(enumTypeName): accepted but not forwarded -- no consumer reads it
-  // yet. Distinct from `typeName` (struct-level) and `enumFqn` (enumdef ref).
 
   entries.push_back(DictionaryAttr::get(ctx, fields));
   return success();
@@ -1567,13 +1619,12 @@ namespace circt::firrtl {
 LogicalResult
 liftDebugIntrinsics(FModuleOp mod, OpBuilder &builder, DebugLeafList &outLeaves,
                     llvm::StringMap<mlir::Value> &outEnumDefByFqn) {
-  // Set insertion point once at the start of the module body.
-  // Guard restores the caller's insertion point
-  // when liftDebugIntrinsics returns
+  // dbg.enumdef is module-scope: fqn-keyed dedup (see `seen`) and UHDI enum
+  // records have no layer scope. Walk-collected enumdefs from layerblocks
+  // land here, not at their source location.
   OpBuilder::InsertionGuard guard{builder};
   builder.setInsertionPointToStart(mod.getBodyBlock());
 
-  // Collect first, then process
   SmallVector<GenericIntrinsicOp> intrinsics{};
   mod.walk([&](GenericIntrinsicOp op) {
     auto kind = op.getIntrinsic();
