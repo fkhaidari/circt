@@ -56,6 +56,22 @@ LogicalResult emitHGLDD(Operation *module, llvm::raw_ostream &os,
 LogicalResult emitSplitHGLDD(Operation *module,
                              const EmitHGLDDOptions &options = {});
 
+/// Options for UHDI emission.
+struct EmitUHDIOptions {
+  /// Prefix prepended to source-file locations surfaced in
+  /// representations.chisel.files.
+  StringRef sourceFilePrefix = "";
+  /// Prefix prepended to HDL-file locations in representations.verilog.files.
+  StringRef outputFilePrefix = "";
+  /// Only emit locations whose files actually exist on disk.
+  bool onlyExistingFileLocs = false;
+};
+
+/// Serialize the debug information in the given `module` into the pool-based
+/// UHDI JSON format and write it to `output`.
+LogicalResult emitUHDI(Operation *module, llvm::raw_ostream &os,
+                       const EmitUHDIOptions &options = {});
+
 } // namespace debug
 } // namespace circt
 
