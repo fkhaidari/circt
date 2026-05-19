@@ -23,8 +23,10 @@
 
 namespace circt::debug {
 
-/// UHDI attr name stamped on dbg.* ops by uhdi-init and consumed by EmitUHDI.
+/// UHDI attr name stamped on dbg.* ops by uhdi-init and consumed by EmitUHDI,
+/// plus the key EmitUHDI files the Verilog representation under.
 inline constexpr llvm::StringLiteral kUhdiStableIdAttr = "uhdi.stable_id";
+inline constexpr llvm::StringLiteral kUhdiVerilogRepr = "verilog";
 
 } // namespace circt::debug
 
