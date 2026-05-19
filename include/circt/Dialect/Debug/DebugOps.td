@@ -9,6 +9,7 @@
 #ifndef CIRCT_DIALECT_DEBUG_DEBUGOPS_TD
 #define CIRCT_DIALECT_DEBUG_DEBUGOPS_TD
 
+include "circt/Dialect/Debug/DebugAttributes.td"
 include "circt/Dialect/Debug/DebugDialect.td"
 include "circt/Dialect/Debug/DebugTypes.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
@@ -112,6 +113,37 @@ def ValueOp : DebugOp<"value"> {
   let hasVerifier = 1;
 }
 
+def ExpressionOp : DebugOp<"expression", [Pure, AttrSizedOperandSegments]> {
+  let summary = "Named compound expression for source-level debug info";
+  let description = [{
+    Captures a compound expression (combinational op tree) as a value-
+    tracking debug entity, sibling to `dbg.variable`. `firrtl-uhdi-capture-
+    when` materialises one for a compound `when` guard, and the guarded
+    `dbg.subblock` takes its result as the condition operand.
+
+    `name` is the cross-reference identifier; `firrtl-uhdi-init` stamps a
+    matching `uhdi.stable_id` for downstream consumers. `opcode` matches
+    the UHDI expressions-pool opcode enum (`&&`, `||`, `!`, `==`, `<`,
+    arithmetic, ...). Value operands track through RAUW so the expression
+    survives ExpandWhens / LowerTypes / FIRRTL-to-HW lowering.
+
+    `Pure` is only sound because the result is used. Referring to this op
+    by name instead would leave it without uses, and `isOpTriviallyDead`
+    would then delete it out from under the statement tree.
+  }];
+  let arguments = (ins
+    StrAttr:$name,
+    StrAttr:$opcode,
+    Variadic<AnyType>:$exprOperands,
+    Optional<ScopeType>:$scope
+  );
+  let results = (outs RefType:$result);
+  let assemblyFormat = [{
+    $name `,` `opcode` $opcode (`,` `operands` `(` $exprOperands^ `:` type($exprOperands) `)`)?
+    (`scope` $scope^)? attr-dict
+  }];
+}
+
 def EnumOp : DebugOp<"enum", [Pure]> {
   let summary = "Interpret an integer value as an enumeration";
   let description = [{
@@ -180,6 +212,119 @@ def ArrayOp : DebugOp<"array", [Pure, SameTypeOperands]> {
   let arguments = (ins Variadic<AnyType>:$elements);
   let results = (outs ArrayType:$result);
   let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Scope body -- statement tree that survives ExpandWhens
+//===----------------------------------------------------------------------===//
+//
+// Produced by `firrtl-uhdi-capture-when` before ExpandWhens destroys the
+// when/else tree. `firrtl-uhdi-init` later assigns the stable IDs the
+// emitter resolves at serialization time.
+//
+// These are operations rather than attributes on the hardware they
+// describe because statement order carries meaning -- it is what encodes
+// FIRRTL's last-connect-wins -- and there is no ordered carrier to attach
+// an attribute to. An `hw.module` body is a `RegionKind::Graph` region, so
+// its operations have no program order at all; the regions below declare
+// no RegionKindInterface and are therefore SSACFG, where the order of the
+// operation list is meaningful and verified. This is the one structural
+// difference from LLVM's model, where a scope attribute can ride on an
+// instruction because a basic block is already an ordered list.
+//
+// References into the value-mapping ops above take three forms, chosen by
+// what the referent is rather than by convenience: an SSA operand when the
+// referent is an operation in this module, a symbol when it lives in
+// another module, and a typed attribute when it is a name whose defining
+// operation carries no result to point at.
+
+def RootBlockOp : DebugOp<"rootblock", [NoTerminator]> {
+  let summary = "Root statement tree for an hw.module or dbg.scope";
+  let description = [{
+    Region-containing op holding the ordered statement tree captured by
+    `firrtl-uhdi-capture-when`. Capture-when produces exactly one per
+    enclosing module / scope, but `firrtl-inliner` may clone additional
+    rootblocks under a caller; downstream UhdiInit / EmitUHDI must tolerate
+    or merge duplicates. Body may only contain `dbg.subblock`,
+    `dbg.connect_stmt`, or `dbg.decl_stmt`; order is significant (preserves
+    FIRRTL last-connect semantics). Serialised as the `body` array on the
+    owning scope entry.
+  }];
+  let arguments = (ins Optional<ScopeType>:$scope);
+  let results = (outs);
+  let regions = (region AnyRegion:$body);
+  let assemblyFormat = "(`scope` $scope^)? attr-dict-with-keyword $body";
+  let hasVerifier = 1;
+}
+
+def SubBlockOp : DebugOp<"subblock", [NoTerminator, ParentOneOf<["RootBlockOp", "SubBlockOp"]>]> {
+  let summary = "Guarded group of statements within a rootblock";
+  let description = [{
+    Groups a subtree of `dbg.rootblock` statements under a single
+    boolean condition. Mirrors one `when` / `else` branch, or the implicit
+    priority of a reset over the connects it overrides. `negated = true`
+    marks the else arm. Serialised as `kind: "block"` (the IR name avoids
+    confusion with `dbg.scope` and the MLIR `Block` primitive).
+    Body may only contain `dbg.subblock`, `dbg.connect_stmt`, or
+    `dbg.decl_stmt`.
+
+    The condition is given exactly one of three ways: `condition` when a
+    `dbg.expression` was materialised for it, `conditionRef` when it is a
+    named variable, or `#dbg.opaque_cond` when it could not be reduced to
+    either. There is no fourth "unrecorded" state -- a subblock always
+    says under what it applies, so a consumer never has to guess whether
+    the statements below are conditional.
+  }];
+  let arguments = (ins
+    Optional<RefType>:$condition,
+    OptionalAttr<AnyAttrOf<[VarRefAttr, OpaqueCondAttr]>>:$conditionRef,
+    DefaultValuedAttr<BoolAttr, "false">:$negated
+  );
+  let results = (outs);
+  let regions = (region AnyRegion:$body);
+  let assemblyFormat = [{
+    (`condition` $condition^)? (`conditionRef` $conditionRef^)?
+    (`negated` $negated^)? attr-dict-with-keyword $body
+  }];
+  let hasVerifier = 1;
+}
+
+def ConnectStmtOp : DebugOp<"connect_stmt", [ParentOneOf<["RootBlockOp", "SubBlockOp"]>]> {
+  let summary = "Statement-level record of a `firrtl.connect`";
+  let description = [{
+    Records a single source-level connect, naming the two sides the way
+    `firrtl.connect` does. `dest` is the assignment target. `src` is the
+    source: a `#dbg.varref` when it has a name, `#dbg.const_source` when
+    it is a constant or an unnamed temporary, or a symbol reference to an
+    `hw.hierpath` when it lives in another module.
+
+    The condition under which the connect happens is not recorded here.
+    It is the conjunction of the enclosing `dbg.subblock` conditions, and
+    duplicating it on the statement would be a second representation of
+    the same fact -- one that has already been observed to drift from the
+    tree it duplicates.
+  }];
+  let arguments = (ins
+    VarRefAttr:$dest,
+    AnyAttrOf<[VarRefAttr, ConstSourceAttr, FlatSymbolRefAttr]>:$src
+  );
+  let assemblyFormat = [{
+    qualified($dest) `=` $src attr-dict
+  }];
+}
+
+def DeclStmtOp : DebugOp<"decl_stmt", [ParentOneOf<["RootBlockOp", "SubBlockOp"]>]> {
+  let summary = "Statement-level declaration marker";
+  let description = [{
+    Marks the point at which `target` becomes visible to a debugger.
+    Useful for step-in behaviour (stop at declaration) and for
+    differentiating a wire declaration from its first connect.
+
+    Named `target` rather than `dest` because this is not an assignment:
+    nothing flows into the variable here, it merely comes into scope.
+  }];
+  let arguments = (ins VarRefAttr:$target);
+  let assemblyFormat = "qualified($target) attr-dict";
 }
 
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_TD

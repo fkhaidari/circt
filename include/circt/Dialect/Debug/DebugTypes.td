@@ -44,4 +44,20 @@ def EnumType : DebugTypeDef<"Enum"> {
   let description = "The result of a `dbg.enum` operation.";
 }
 
+def RefType : DebugTypeDef<"Ref"> {
+  let mnemonic = "ref";
+  let summary = "debug reference handle";
+  let description = [{
+    An SSA handle naming a debug entity, so that one debug operation can
+    refer to another without going through a name. Produced by
+    `dbg.expression`; consumed by `dbg.subblock` as its condition and by
+    `dbg.expression` itself for nested compound guards.
+
+    Values of this type never reach hardware. An operand of this type is
+    therefore free: it does not enter the use counts that drive
+    ExportVerilog's inlining decisions, unlike an operand on a real
+    hardware value.
+  }];
+}
+
 #endif // CIRCT_DIALECT_DEBUG_DEBUGTYPES_TD

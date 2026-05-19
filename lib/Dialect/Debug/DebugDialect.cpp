@@ -15,6 +15,7 @@ using namespace debug;
 void DebugDialect::initialize() {
   registerOps();
   registerTypes();
+  registerAttributes();
 }
 
 // Dialect implementation generated from `DebugDialect.td`

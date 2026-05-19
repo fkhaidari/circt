@@ -9,6 +9,7 @@
 #ifndef CIRCT_DIALECT_DEBUG_DEBUG_TD
 #define CIRCT_DIALECT_DEBUG_DEBUG_TD
 
+include "circt/Dialect/Debug/DebugAttributes.td"
 include "circt/Dialect/Debug/DebugDialect.td"
 include "circt/Dialect/Debug/DebugOps.td"
 include "circt/Dialect/Debug/DebugTypes.td"
