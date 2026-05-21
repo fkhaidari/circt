@@ -242,10 +242,19 @@ public:
   /// fallback. An enum-tagged `dbg.subfield` wrapper override the
   /// scalar typeRef with the enum type-pool entry.
   std::string internValueType(mlir::Value value, StringRef nameHint = {}) {
-    if (auto sf = findDbgSubField(value))
+    if (auto sf = findDbgSubField(value)) {
       if (mlir::Value e = sf.getEnumDef())
         if (auto edOp = e.getDefiningOp<debug::EnumDefOp>())
           return internEnumDef(edOp);
+      // Cross-module shared enum: `dbg.enumdef` is hosted in a different
+      // module, so the SSA `enumDef` operand is empty. The pre-pass in
+      // `emit()` has already interned every `dbg.enumdef` globally; resolve
+      // the pool entry by FQN. `enumTypeId(op)` keys on fqn (or typeName),
+      // so the id matches verbatim.
+      if (auto id =
+              lookupEnumByName(sf.getEnumFqnAttr(), sf.getEnumTypeNameAttr()))
+        return *id;
+    }
     value = unwrapDbgSubField(value);
     if (auto opResult = dyn_cast<OpResult>(value)) {
       if (auto s = dyn_cast_or_null<debug::StructOp>(opResult.getOwner()))
@@ -306,6 +315,24 @@ public:
                          {"underlyingTypeRef", underlyingId},
                          {"variants", std::move(variantsJson)}};
     return id;
+  }
+
+  /// Resolve a previously-interned enum-pool entry by its string id (FQN
+  /// preferred, bare typeName as fallback — matches `enumTypeId`). The
+  /// emit-time pre-pass interns every `dbg.enumdef` in the compile unit,
+  /// so a hit here is the cross-module shared-enum binding.
+  std::optional<std::string> lookupEnumByName(StringAttr fqnAttr,
+                                              StringAttr typeNameAttr) const {
+    auto tryKey = [&](StringAttr a) -> std::optional<std::string> {
+      if (!a || a.getValue().empty())
+        return std::nullopt;
+      if (entries.get(a.getValue()))
+        return a.getValue().str();
+      return std::nullopt;
+    };
+    if (auto hit = tryKey(fqnAttr))
+      return hit;
+    return tryKey(typeNameAttr);
   }
 
   Object asObject() const { return entries; }
@@ -818,10 +845,16 @@ static Object emitVariable(
 
         Object synEntry;
         synEntry["typeRef"] = [&]() -> std::string {
-          if (sf)
+          if (sf) {
             if (mlir::Value e = sf.getEnumDef())
               if (auto edOp = e.getDefiningOp<debug::EnumDefOp>())
                 return s.types.internEnumDef(edOp);
+            // Cross-module shared enum: resolve by FQN against the
+            // pre-interned pool (parallels `internValueType`).
+            if (auto id = s.types.lookupEnumByName(sf.getEnumFqnAttr(),
+                                                   sf.getEnumTypeNameAttr()))
+              return *id;
+          }
           return s.types.internValueType(innerVal, parentId.getValue());
         }();
         if (!ownerScope.empty())

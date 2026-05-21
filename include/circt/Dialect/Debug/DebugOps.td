@@ -106,13 +106,22 @@ def SubFieldOp : DebugOp<"subfield"> {
     of a `dbg.struct` or `dbg.array`. Freshly-created ops with no users are
     tolerated by the verifier to accommodate construction patterns; any
     surviving user must be `dbg.struct` or `dbg.array`.
+
+    `enumDef` is an SSA reference to a `dbg.enumdef` in the same module.
+    `enumTypeName` / `enumFqn` are string mirrors of that linkage, allowing
+    consumers to resolve the enum type-pool entry by FQN when the
+    `dbg.enumdef` lives in a different module (cross-module shared enums:
+    the producer-side intrinsic carries the FQN even when it is not
+    practical to clone the `dbg.enumdef` into every using module).
   }];
   let arguments = (ins
     StrAttr:$name,
     AnyType:$value,
     OptionalAttr<StrAttr>:$typeName,
     OptionalAttr<ArrayAttr>:$params,
-    Optional<EnumDefType>:$enumDef
+    Optional<EnumDefType>:$enumDef,
+    OptionalAttr<StrAttr>:$enumTypeName,
+    OptionalAttr<StrAttr>:$enumFqn
   );
   let results = (outs SubFieldType:$result);
   let assemblyFormat = [{

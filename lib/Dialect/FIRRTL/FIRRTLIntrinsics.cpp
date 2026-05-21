@@ -865,6 +865,11 @@ struct LeafMeta {
   Value enumDefVal;
   StringAttr typeName;
   ArrayAttr params;
+  // Mirrored on the emitted `dbg.subfield` so EmitUHDI can resolve the
+  // enum-pool entry by FQN when the `dbg.enumdef` is in a different module
+  // (cross-module shared enums; per-module enumDefByFqn cannot bind those).
+  StringAttr enumTypeName;
+  StringAttr enumFqn;
 };
 } // namespace
 using LeafMetaMap = llvm::StringMap<LeafMeta>;
@@ -904,15 +909,19 @@ private:
     Value enumDef{};
     ArrayAttr params{};
     StringAttr typeName{};
+    StringAttr enumTypeName{};
+    StringAttr enumFqn{};
     if (auto it = leafMetaMap.find(parentPath); it != leafMetaMap.end()) {
       typeName = it->second.typeName;
       params = it->second.params;
       enumDef = it->second.enumDefVal;
+      enumTypeName = it->second.enumTypeName;
+      enumFqn = it->second.enumFqn;
     }
 
     auto nameAttr = StringAttr::get(rewriter.getContext(), parentPath);
     return debug::SubFieldOp::create(rewriter, loc, nameAttr, inner, typeName,
-                                     params, enumDef)
+                                     params, enumDef, enumTypeName, enumFqn)
         .getResult();
   }
 
@@ -1087,8 +1096,11 @@ public:
         LeafMeta meta;
         meta.typeName = entry.getAs<StringAttr>("typeName");
         meta.params = entry.getAs<ArrayAttr>("params");
-        meta.enumDefVal =
-            lookupEnumDef(entry.getAs<StringAttr>("enumFqn"), gi.op);
+        meta.enumFqn = entry.getAs<StringAttr>("enumFqn");
+        meta.enumTypeName = entry.getAs<StringAttr>("enumTypeName");
+        // No warnAt: a missing same-module enumdef is now expected for
+        // shared enums; the FQN string above is the cross-module binding.
+        meta.enumDefVal = lookupEnumDef(meta.enumFqn, /*warnAt=*/nullptr);
         leafMap[pathAttr.getValue()] = meta;
       }
     }
@@ -1585,11 +1597,16 @@ LogicalResult processSubfieldIntrinsic(GenericIntrinsicOp op,
   if (auto fqn = gi.getParamValue<StringAttr>("enumFqn");
       fqn && !fqn.getValue().empty())
     fields.push_back({StringAttr::get(ctx, "enumFqn"), fqn});
+  // `enumTypeName` is the bare source-language name (e.g. "AluOp"); kept as
+  // a string mirror of the enumdef linkage so EmitUHDI can resolve the
+  // enum type-pool entry by FQN when the `dbg.enumdef` lives in a different
+  // FIRRTL module (shared enums in multi-module designs).
+  if (auto etn = gi.getParamValue<StringAttr>("enumTypeName");
+      etn && !etn.getValue().empty())
+    fields.push_back({StringAttr::get(ctx, "enumTypeName"), etn});
   if (auto paramsStr = gi.getParamValue<StringAttr>("params"))
     if (auto params = parseParamsJSON(ctx, paramsStr, op))
       fields.push_back({StringAttr::get(ctx, "params"), params});
-  // TODO(enumTypeName): accepted but not forwarded -- no consumer reads it
-  // yet. Distinct from `typeName` (struct-level) and `enumFqn` (enumdef ref).
 
   entries.push_back(DictionaryAttr::get(ctx, fields));
   return success();

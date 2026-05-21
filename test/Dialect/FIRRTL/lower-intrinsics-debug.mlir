@@ -98,7 +98,7 @@ firrtl.circuit "BundleEnumFieldTest" {
 
     // Root circt_debug_var -- produces dbg.struct + dbg.variable
     // CHECK:      firrtl.subfield %{{.*}}[state]
-    // CHECK:      dbg.subfield "io.state", %{{.*}} typeName "UInt" enumDef %[[E]] : !firrtl.uint<2>
+    // CHECK:      dbg.subfield "io.state", %{{.*}} typeName "UInt" enumDef %[[E]] {enumFqn = "pkg.MyState$", enumTypeName = "MyState"} : !firrtl.uint<2>
     // CHECK:      firrtl.subfield %{{.*}}[data]
     // CHECK:      dbg.subfield "io.data", %{{.*}} typeName "UInt" : !firrtl.uint<8>
     // CHECK:      dbg.struct
@@ -144,7 +144,7 @@ firrtl.circuit "BundleFEnumFieldTest" {
       %io : (!firrtl.bundle<state: enum<Idle: uint<0>, Run: uint<0>>, data: uint<8>>) -> ()
 
     // CHECK:      firrtl.subfield %{{.*}}[state]
-    // CHECK:      dbg.subfield "io.state", %{{.*}} typeName "UInt" enumDef %[[E]] : !firrtl.enum<Idle, Run>
+    // CHECK:      dbg.subfield "io.state", %{{.*}} typeName "UInt" enumDef %[[E]] {enumFqn = "pkg.MyState$", enumTypeName = "MyState"} : !firrtl.enum<Idle, Run>
     // CHECK:      firrtl.subfield %{{.*}}[data]
     // CHECK:      dbg.subfield "io.data", %{{.*}} typeName "UInt" : !firrtl.uint<8>
     // CHECK:      dbg.struct
