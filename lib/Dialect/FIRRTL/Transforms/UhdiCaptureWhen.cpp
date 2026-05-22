@@ -173,6 +173,13 @@ StringRef firrtlOpcode(Operation *op) {
 /// wrapping it lives there. Null otherwise; caller breaks the chain.
 mlir::Value findModuleBodyProxy(mlir::Value value, FModuleOp module) {
   Block *moduleBody = module.getBodyBlock();
+  // Constants are pure and have no control-flow dependence, so they are
+  // valid operands regardless of which block they were defined in. After
+  // FIRRTL lowering they become hw::ConstantOp, which EmitUHDI already
+  // renders via renderConstant — so no special EmitUHDI change is needed.
+  if (auto opResult = dyn_cast<OpResult>(value))
+    if (isa<firrtl::ConstantOp>(opResult.getOwner()))
+      return value;
   // Direct: the value itself is at module body.
   Block *owner = isa<BlockArgument>(value)
                      ? cast<BlockArgument>(value).getOwner()
@@ -199,6 +206,17 @@ mlir::Value materializeExpression(mlir::Value cond,
   if (!opResult)
     return {};
   Operation *defOp = opResult.getOwner();
+
+  // Peel through `firrtl.node` wrappers: Chisel compiles `when(expr)` into
+  // a named node wrapping the actual primop. `firrtlOpcode` won't recognise
+  // NodeOp, so we'd fall back to `<complex>` without this peel.
+  while (auto node = dyn_cast<firrtl::NodeOp>(defOp)) {
+    auto inner = dyn_cast<OpResult>(node.getInput());
+    if (!inner)
+      return {};
+    defOp = inner.getOwner();
+  }
+
   StringRef opcode = firrtlOpcode(defOp);
   if (opcode.empty())
     return {};
