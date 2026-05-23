@@ -530,15 +530,18 @@ static StringRef combBinaryOpcode(Operation *op) {
 }
 
 /// Render a hw.constant: LeafConst for ≤63-bit values (cap at 63 so the
-/// cast to int64_t never sign-flips), LeafBitVec otherwise. Neither
-/// variant carries a `width` key — schema is additionalProperties:false
-/// and width is implicit from the enclosing variable's typeRef
-/// (LeafConst) or the bit-string length (LeafBitVec).
-static Object renderConstant(const llvm::APInt &val) {
+/// cast to int64_t never sign-flips), LeafBitVec otherwise. When
+/// `includeWidth` is true (inside expressions where there is no enclosing
+/// typeRef) the `width` key is emitted so the converter can pick the
+/// bit_vector path instead of integer_num.
+static Object renderConstant(const llvm::APInt &val,
+                             bool includeWidth = false) {
   Object lit;
   unsigned bw = val.getBitWidth();
   if (val.getActiveBits() <= 63) {
     lit["constant"] = static_cast<int64_t>(val.getZExtValue());
+    if (includeWidth)
+      lit["width"] = int64_t(bw);
     return lit;
   }
   llvm::SmallString<128> bits;
@@ -548,6 +551,8 @@ static Object renderConstant(const llvm::APInt &val) {
   while (bits.size() < bw)
     bits.insert(bits.begin(), '0'); // toString drops leading zeros.
   lit["bitVector"] = bits.str().str();
+  if (includeWidth)
+    lit["width"] = int64_t(bw);
   return lit;
 }
 
@@ -602,13 +607,14 @@ public:
     if (auto a = dyn_cast<debug::ArrayOp>(defOp))
       return wrap("'{", fillFrom(a.getElements()));
     if (auto c = dyn_cast<hw::ConstantOp>(defOp))
-      return renderConstant(c.getValue());
+      return renderConstant(c.getValue(), /*includeWidth=*/true);
     if (auto concat = dyn_cast<comb::ConcatOp>(defOp))
       return wrap("{}", fillFrom(concat.getOperands()));
     if (auto repl = dyn_cast<comb::ReplicateOp>(defOp))
       return wrap("R{}", [&](Array &out) {
         out.push_back(operandFor(repl.getInput(), leafNameFn));
-        out.push_back(Object{{"constant", int64_t(repl.getMultiple())}});
+        out.push_back(Object{{"constant", int64_t(repl.getMultiple())},
+                             {"width", int64_t(1)}});
       });
     if (auto mux = dyn_cast<comb::MuxOp>(defOp))
       return wrap("?:", [&](Array &out) {

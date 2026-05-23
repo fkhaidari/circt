@@ -217,6 +217,11 @@ mlir::Value materializeExpression(mlir::Value cond,
     defOp = inner.getOwner();
   }
 
+  // dbg.expression is inserted at module-body level; if defOp lives in a child
+  // region (inside a when-block), its results would violate SSA dominance.
+  if (defOp->getBlock() != module.getBodyBlock())
+    return {};
+
   StringRef opcode = firrtlOpcode(defOp);
   if (opcode.empty())
     return {};
