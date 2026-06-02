@@ -576,7 +576,8 @@ private:
   /// so that `process` is only invoked on regionless operations.
   LogicalResult
   inliningWalk(OpBuilder &builder, Block *block, IRMapping &mapper,
-               llvm::function_ref<LogicalResult(Operation *op)> process);
+               llvm::function_ref<LogicalResult(Operation *op)> process,
+               mlir::Value debugScope = {});
 
   /// Flattens a target module into the insertion point of the builder,
   /// renaming all operations using the prefix.  This clones all operations from
@@ -702,6 +703,10 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
     return updateDebugScope(varOp), false;
   if (auto scopeOp = dyn_cast<debug::ScopeOp>(op))
     return updateDebugScope(scopeOp), false;
+  if (auto exprOp = dyn_cast<debug::ExpressionOp>(op))
+    return updateDebugScope(exprOp), false;
+  if (auto rbOp = dyn_cast<debug::RootBlockOp>(op))
+    return updateDebugScope(rbOp), false;
 
   // Add a prefix to things that has a "name" attribute.
   if (auto nameAttr = op->getAttrOfType<StringAttr>("name"))
@@ -947,9 +952,10 @@ bool Inliner::shouldInline(Operation *op) {
   return AnnotationSet::hasAnnotation(op, inlineAnnoClass);
 }
 
-LogicalResult Inliner::inliningWalk(
-    OpBuilder &builder, Block *block, IRMapping &mapper,
-    llvm::function_ref<LogicalResult(Operation *op)> process) {
+LogicalResult
+Inliner::inliningWalk(OpBuilder &builder, Block *block, IRMapping &mapper,
+                      llvm::function_ref<LogicalResult(Operation *op)> process,
+                      mlir::Value debugScope) {
   struct IPs {
     OpBuilder::InsertPoint target;
     Block::iterator source;
@@ -975,6 +981,13 @@ LogicalResult Inliner::inliningWalk(
         inliningStack.pop_back();
     }
 
+    // Skip child ModuleInfoOp on inline: parent's own ModuleInfoOp must
+    // remain unique per region (DebugOps.cpp:224 verifier). Per-instance
+    // typeName routing via ScopeOp is a separate followup (Option A in
+    // council notes).
+    if (isa<debug::ModuleInfoOp>(source))
+      continue;
+
     // Does the source have regions? If not, use callback to process.
     if (source->getNumRegions() == 0) {
       assert(builder.saveInsertionPoint().getPoint() == target.getPoint());
@@ -987,7 +1000,17 @@ LogicalResult Inliner::inliningWalk(
     }
 
     // Limited support for region-containing operations.
-    if (!isa<LayerBlockOp, WhenOp, MatchOp>(source))
+    // dbg.rootblock/subblock must survive inlining so the captured
+    // when/connect tree clones under the caller's scope.
+    // Note: cloning rootblock under a module that already has one (or under
+    // multiple inlined sites) is expected and documented behavior per
+    // DebugOps.td: capture-when produces exactly one rootblock per module
+    // scope, but firrtl-inliner is documented to clone additional rootblocks
+    // under the caller. Downstream UhdiInit / EmitUHDI tolerate and merge
+    // them; the verifier (verifyUhdiStatementRefs) walks every rootblock
+    // independently and will not flag this.
+    if (!isa<LayerBlockOp, WhenOp, MatchOp, debug::RootBlockOp,
+             debug::SubBlockOp>(source))
       return source->emitError("unsupported operation '")
              << source->getName() << "' cannot be inlined";
 
@@ -996,6 +1019,9 @@ LogicalResult Inliner::inliningWalk(
     // to prefix.  This does mean these operations do not appear
     // in `il.newOps` for inner-ref renaming walk, FWIW.
     auto *newOp = builder.cloneWithoutRegions(*source, mapper);
+    if (auto rbOp = dyn_cast<debug::RootBlockOp>(newOp))
+      if (!rbOp.getScope() && debugScope)
+        rbOp.getScopeMutable().assign(debugScope);
     for (auto [newRegion, oldRegion] : llvm::reverse(
              llvm::zip_equal(newOp->getRegions(), source->getRegions()))) {
       // If region has no blocks, skip.
@@ -1096,7 +1122,8 @@ LogicalResult Inliner::flattenInto(StringRef prefix, InliningLevel &il,
     activeHierpaths = parentActivePaths;
     return success();
   };
-  return inliningWalk(il.mic.b, target.getBodyBlock(), mapper, visit);
+  return inliningWalk(il.mic.b, target.getBodyBlock(), mapper, visit,
+                      il.debugScope);
 }
 
 LogicalResult Inliner::flattenInstances(FModuleOp module) {
@@ -1279,7 +1306,8 @@ Inliner::inlineInto(StringRef prefix, InliningLevel &il, IRMapping &mapper,
     return success();
   };
 
-  return inliningWalk(il.mic.b, target.getBodyBlock(), mapper, visit);
+  return inliningWalk(il.mic.b, target.getBodyBlock(), mapper, visit,
+                      il.debugScope);
 }
 
 LogicalResult Inliner::inlineInstances(FModuleOp module) {

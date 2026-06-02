@@ -106,13 +106,22 @@ def SubFieldOp : DebugOp<"subfield"> {
     of a `dbg.struct` or `dbg.array`. Freshly-created ops with no users are
     tolerated by the verifier to accommodate construction patterns; any
     surviving user must be `dbg.struct` or `dbg.array`.
+
+    `enumDef` is an SSA reference to a `dbg.enumdef` in the same module.
+    `enumTypeName` / `enumFqn` are string mirrors of that linkage, allowing
+    consumers to resolve the enum type-pool entry by FQN when the
+    `dbg.enumdef` lives in a different module (cross-module shared enums:
+    the producer-side intrinsic carries the FQN even when it is not
+    practical to clone the `dbg.enumdef` into every using module).
   }];
   let arguments = (ins
     StrAttr:$name,
     AnyType:$value,
     OptionalAttr<StrAttr>:$typeName,
     OptionalAttr<ArrayAttr>:$params,
-    Optional<EnumDefType>:$enumDef
+    Optional<EnumDefType>:$enumDef,
+    OptionalAttr<StrAttr>:$enumTypeName,
+    OptionalAttr<StrAttr>:$enumFqn
   );
   let results = (outs SubFieldType:$result);
   let assemblyFormat = [{
@@ -120,6 +129,34 @@ def SubFieldOp : DebugOp<"subfield"> {
         (`enumDef` $enumDef^)? attr-dict `:` type($value)
   }];
   let hasVerifier = 1;
+}
+
+def ExpressionOp : DebugOp<"expression", [AttrSizedOperandSegments]> {
+  let summary = "Named compound expression for source-level debug info";
+  let description = [{
+    Captures a compound expression (combinational op tree) as a value-
+    tracking debug entity, sibling to `dbg.variable`. `firrtl-uhdi-capture-
+    when` materialises one for compound `when` guards instead of emitting
+    a `<complex>` sentinel, and the statement tree references it by name
+    from `guardRef`.
+
+    `name` is the cross-reference identifier; `firrtl-uhdi-init` stamps a
+    matching `uhdi.stable_id` for downstream consumers. `opcode` matches
+    the UHDI expressions-pool opcode enum (`&&`, `||`, `!`, `==`, `<`,
+    arithmetic, ...). Value operands track through RAUW so the expression
+    survives ExpandWhens / LowerTypes / FIRRTL-to-HW lowering.
+  }];
+  let arguments = (ins
+    StrAttr:$name,
+    StrAttr:$opcode,
+    Variadic<AnyType>:$exprOperands,
+    Optional<ScopeType>:$scope
+  );
+  let results = (outs ExpressionType:$result);
+  let assemblyFormat = [{
+    $name `,` `opcode` $opcode (`,` `operands` `(` $exprOperands^ `:` type($exprOperands) `)`)?
+    (`scope` $scope^)? attr-dict
+  }];
 }
 
 def ModuleInfoOp : DebugOp<"moduleinfo"> {
@@ -217,6 +254,86 @@ def ArrayOp : DebugOp<"array", [Pure, SameTypeOperands]> {
   let arguments = (ins Variadic<AnyType>:$elements);
   let results = (outs ArrayType:$result);
   let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Scope body -- statement tree that survives ExpandWhens
+//===----------------------------------------------------------------------===//
+//
+// Produced by `firrtl-uhdi-capture-when` before ExpandWhens destroys the
+// when/else tree. StringAttr-based refs (varRef / valueRef / guardRef)
+// decouple from FIRRTL ops being rewritten; `firrtl-uhdi-init` later
+// assigns the stable IDs the emitter resolves at serialization time.
+
+def RootBlockOp : DebugOp<"rootblock", [NoTerminator]> {
+  let summary = "Root statement tree for an hw.module or dbg.scope";
+  let description = [{
+    Region-containing op holding the ordered statement tree captured by
+    `firrtl-uhdi-capture-when`. Capture-when produces exactly one per
+    enclosing module / scope, but `firrtl-inliner` may clone additional
+    rootblocks under a caller; downstream UhdiInit / EmitUHDI must tolerate
+    or merge duplicates. Body may only contain `dbg.subblock`,
+    `dbg.connect_stmt`, or `dbg.decl_stmt`; order is significant (preserves
+    FIRRTL last-connect semantics). Serialised as the `body` array on the
+    owning scope entry.
+  }];
+  let arguments = (ins Optional<ScopeType>:$scope);
+  let results = (outs);
+  let regions = (region AnyRegion:$body);
+  let assemblyFormat = "(`scope` $scope^)? attr-dict-with-keyword $body";
+  let hasVerifier = 1;
+}
+
+def SubBlockOp : DebugOp<"subblock", [NoTerminator, ParentOneOf<["RootBlockOp", "SubBlockOp"]>]> {
+  let summary = "Guarded group of statements within a rootblock";
+  let description = [{
+    Groups a subtree of `dbg.rootblock` statements under a single
+    boolean guard. Mirrors one `when` / `else` branch. `guardRef` names
+    the carrying `dbg.variable` or `dbg.expression`; `negated = true`
+    marks the else arm. Serialised as `kind: "block"` (the IR name avoids
+    confusion with `dbg.scope` and the MLIR `Block` primitive).
+    Body may only contain `dbg.subblock`, `dbg.connect_stmt`, or
+    `dbg.decl_stmt`.
+  }];
+  let arguments = (ins
+    StrAttr:$guardRef,
+    DefaultValuedAttr<BoolAttr, "false">:$negated
+  );
+  let results = (outs);
+  let regions = (region AnyRegion:$body);
+  let assemblyFormat = [{
+    `guard` $guardRef (`negated` $negated^)? attr-dict-with-keyword $body
+  }];
+  let hasVerifier = 1;
+}
+
+def ConnectStmtOp : DebugOp<"connect_stmt", [ParentOneOf<["RootBlockOp", "SubBlockOp"]>]> {
+  let summary = "Statement-level record of a `firrtl.connect`";
+  let description = [{
+    Records a single source-level connect. `varRef` names the target
+    `dbg.variable`; `valueRef` names the source `dbg.variable` or
+    `dbg.expression`. `bp` carries breakpoint metadata; currently only
+    `enableRef` (AND-reduced guard expression name) is populated.
+  }];
+  let arguments = (ins
+    StrAttr:$varRef,
+    StrAttr:$valueRef,
+    OptionalAttr<DictionaryAttr>:$bp
+  );
+  let assemblyFormat = [{
+    $varRef `=` $valueRef (`bp` $bp^)? attr-dict
+  }];
+}
+
+def DeclStmtOp : DebugOp<"decl_stmt", [ParentOneOf<["RootBlockOp", "SubBlockOp"]>]> {
+  let summary = "Statement-level declaration marker";
+  let description = [{
+    Marks the point at which `varRef` becomes visible to a debugger.
+    Useful for step-in behaviour (stop at declaration) and for
+    differentiating a wire declaration from its first connect.
+  }];
+  let arguments = (ins StrAttr:$varRef);
+  let assemblyFormat = "$varRef attr-dict";
 }
 
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_TD
