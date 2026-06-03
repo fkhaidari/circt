@@ -771,6 +771,30 @@ def MaterializeDebugInfo :
   let dependentDialects = ["debug::DebugDialect"];
 }
 
+def UhdiCaptureWhen : Pass<"firrtl-uhdi-capture-when", "firrtl::FModuleOp"> {
+  let summary = "Record when/connect structure into dbg.rootblock";
+  let description = [{
+    Record each FIRRTL module's when/connect tree into a `dbg.rootblock`
+    region that survives `firrtl-expand-whens`. Each `firrtl.when` opens
+    a `dbg.subblock`; each `firrtl.connect` becomes a `dbg.connect_stmt`
+    whose `bp.enableRef` carries the AND-reduced guard-stack under which
+    the connect fires. StringAttr-based refs decouple the captured
+    structure from the FIRRTL IR that ExpandWhens shortly destroys;
+    stable-ID resolution happens later in EmitUHDI.
+
+    Known limitations:
+      - Complex conditions fall back to a `<complex>` placeholder
+        guardRef when no `dbg.expression` can be materialised.
+      - No memoization of AND-reduced enable strings.
+      - Verification statements (assert/assume/cover) are not captured.
+      - AsyncResetType and synchronous UInt<1> resets produce the same
+        `!<reset>` guard string; no async-always-block annotation is
+        emitted. Correct for UHDI over-approximating semantics; a
+        dedicated async-reset representation is future work.
+  }];
+  let dependentDialects = ["debug::DebugDialect", "hw::HWDialect"];
+}
+
 def UhdiInit : Pass<"firrtl-uhdi-init", "firrtl::FModuleOp"> {
   let summary = "Stamp uhdi.stable_id onto every dbg.* op";
   let description = [{
