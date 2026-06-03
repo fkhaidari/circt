@@ -759,6 +759,23 @@ def MaterializeDebugInfo :
   let dependentDialects = ["debug::DebugDialect"];
 }
 
+def UhdiInit : Pass<"firrtl-uhdi-init", "firrtl::FModuleOp"> {
+  let summary = "Stamp uhdi.stable_id onto the addressable dbg.* ops";
+  let description = [{
+    Assign each `dbg.variable` / `dbg.scope` a deterministic
+    `uhdi.stable_id` of the form `<kind>_<hashPrefix>_<counter>`. The
+    fingerprint covers the op's intrinsic identity (kind, owning module,
+    name/type) and the instance path of the enclosing `dbg.scope` chain,
+    which is what keeps inlined copies of one module body distinct; walk
+    position is excluded so an unrelated dbg.* op insert/remove upstream
+    does not perturb sibling IDs. `dbg.struct` / `dbg.array` are not
+    stamped: nothing reads an id for them, and having no scope operand
+    they could not be told apart across inline sites anyway. Idempotent
+    on re-runs.
+  }];
+  let dependentDialects = ["debug::DebugDialect"];
+}
+
 def LinkCircuits : Pass<"firrtl-link-circuits", "mlir::ModuleOp"> {
   let summary = "Links multiple circuits into a single one";
   let description = [{

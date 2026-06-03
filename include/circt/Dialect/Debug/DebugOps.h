@@ -21,4 +21,11 @@
 #define GET_OP_CLASSES
 #include "circt/Dialect/Debug/Debug.h.inc"
 
+namespace circt::debug {
+
+/// UHDI attr name stamped on dbg.* ops by uhdi-init and consumed by EmitUHDI.
+inline constexpr llvm::StringLiteral kUhdiStableIdAttr = "uhdi.stable_id";
+
+} // namespace circt::debug
+
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_H
