@@ -21,4 +21,21 @@
 #define GET_OP_CLASSES
 #include "circt/Dialect/Debug/Debug.h.inc"
 
+namespace circt::debug {
+
+/// The key EmitUHDI files the Verilog binding under.
+inline constexpr llvm::StringLiteral kUhdiVerilogRepr = "verilog";
+
+/// Source-level type name and constructor parameters of a module. Stamped on
+/// the module op by the `circt_debug_moduleinfo` intrinsic, and copied onto
+/// the `dbg.scope` of an inlined instance, whose module op no longer exists.
+inline constexpr llvm::StringLiteral kDbgModuleInfoAttr = "dbg.moduleinfo";
+
+/// Which fields of a `dbg.struct` are flipped relative to the struct, as a
+/// bool array parallel to its fields. Stamped from the FIRRTL bundle type,
+/// which lowering erases. Absent when no field is flipped.
+inline constexpr llvm::StringLiteral kDbgFlipsAttr = "dbg.flips";
+
+} // namespace circt::debug
+
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_H
