@@ -972,6 +972,20 @@ static Object reprDict(StringRef name, std::optional<Object> loc) {
   return d;
 }
 
+/// Adds the source-level type name + constructor params recorded in an op's
+/// `dbg.moduleinfo` attribute to a representation entry. The attribute is set
+/// once per module by the intrinsic lowering and rides through FIRRTL->HW
+/// lowering; uniqueness is structural. Inlining copies it onto the `dbg.scope`
+/// it creates, since the module op it lived on is gone by then.
+static void addSourceLangType(Object &repr, Operation *op) {
+  auto miAttr = op->getAttrOfType<DictionaryAttr>(kDbgModuleInfoAttr);
+  if (!miAttr)
+    return;
+  if (auto slt = renderSourceLangType(miAttr.getAs<StringAttr>("typeName"),
+                                      miAttr.getAs<ArrayAttr>("params")))
+    repr["sourceLangType"] = std::move(*slt);
+}
+
 /// One `scopes[id]` entry for an `hw.module`.
 static Object emitModuleScope(hw::HWModuleOp module, EmitState &s) {
   StringRef sym = module.getNameAttr().getValue();
@@ -981,14 +995,7 @@ static Object emitModuleScope(hw::HWModuleOp module, EmitState &s) {
   Object entry{{"name", sym.str()}, {"kind", "module"}};
   Object reprs;
   Object chiselRepr = reprDict(sym, s.chiselLoc(module.getLoc()));
-  // The module's `dbg.moduleinfo` attribute supplies the source-level type
-  // name + constructor params. It is set once per module by the intrinsic
-  // lowering and rides through FIRRTL->HW lowering; uniqueness is structural.
-  if (auto miAttr = module->getAttrOfType<DictionaryAttr>("dbg.moduleinfo")) {
-    if (auto slt = renderSourceLangType(miAttr.getAs<StringAttr>("typeName"),
-                                        miAttr.getAs<ArrayAttr>("params")))
-      chiselRepr["sourceLangType"] = std::move(*slt);
-  }
+  addSourceLangType(chiselRepr, module);
   reprs[kChiselRepr] = std::move(chiselRepr);
   reprs[kUhdiVerilogRepr] = reprDict(vname, s.verilogLoc(module.getLoc()));
   entry["representations"] = std::move(reprs);
@@ -1026,8 +1033,10 @@ static Object emitModuleScope(hw::HWModuleOp module, EmitState &s) {
 static Object emitInlineScope(debug::ScopeOp scope, EmitState &s) {
   Object entry{{"name", scope.getModuleName().str()}, {"kind", "inline"}};
   Object reprs;
-  reprs[kChiselRepr] =
+  Object chiselRepr =
       reprDict(scope.getInstanceName(), s.chiselLoc(scope.getLoc()));
+  addSourceLangType(chiselRepr, scope);
+  reprs[kChiselRepr] = std::move(chiselRepr);
   entry["representations"] = std::move(reprs);
   if (auto module = scope->getParentOfType<hw::HWModuleOp>())
     entry["containerScopeRef"] = module.getNameAttr().getValue().str();
