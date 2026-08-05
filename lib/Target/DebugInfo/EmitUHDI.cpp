@@ -1038,6 +1038,16 @@ static Object emitInlineScope(debug::ScopeOp scope, EmitState &s) {
   addSourceLangType(chiselRepr, scope);
   reprs[kChiselRepr] = std::move(chiselRepr);
   entry["representations"] = std::move(reprs);
+  // A scope nested in another one belongs to that scope, not to the hardware
+  // module both happen to sit in. Naming the module would flatten a hierarchy
+  // the IR keeps nested, since inlining a module that was itself inlined into
+  // leaves one scope per level.
+  if (auto parent = scope.getScope())
+    if (auto *def = parent.getDefiningOp())
+      if (auto id = def->getAttrOfType<StringAttr>(kUhdiStableIdAttr)) {
+        entry["containerScopeRef"] = id.getValue().str();
+        return entry;
+      }
   if (auto module = scope->getParentOfType<hw::HWModuleOp>())
     entry["containerScopeRef"] = module.getNameAttr().getValue().str();
   return entry;
