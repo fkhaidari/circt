@@ -793,7 +793,8 @@ public:
                           parseParamsJSON(context, paramsStr, gi.op));
     auto modOp = gi.op->getParentOfType<FModuleOp>();
     rewriter.modifyOpInPlace(modOp, [&] {
-      modOp->setAttr("dbg.moduleinfo", DictionaryAttr::get(context, fields));
+      modOp->setAttr(debug::kDbgModuleInfoAttr,
+                     DictionaryAttr::get(context, fields));
     });
     rewriter.eraseOp(gi.op);
   }

@@ -697,6 +697,12 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
   auto updateDebugScope = [&](auto op) {
     if (!op.getScope())
       op.getScopeMutable().assign(il.debugScope);
+    // A clone describes this instance, not the one the original was stamped
+    // for. Carrying the inherited id over would make every inline site share
+    // one pool entry in the emitted document, where the last site overwrites
+    // the rest; dropping it lets the post-inliner UhdiInit run issue an id per
+    // site.
+    op->removeAttr(debug::kUhdiStableIdAttr);
   };
   if (auto varOp = dyn_cast<debug::VariableOp>(op))
     return updateDebugScope(varOp), false;
@@ -1393,6 +1399,11 @@ void Inliner::createDebugScope(InliningLevel &il, InstanceOp instance,
   auto op = debug::ScopeOp::create(
       il.mic.b, instance.getLoc(), instance.getInstanceNameAttr(),
       instance.getModuleNameAttr().getAttr(), parentScope);
+  // The source-level type name and its parameters live on the module op, which
+  // inlining erases. Carry them onto the scope, so that the debug info of an
+  // inlined instance still says which source type it came from.
+  if (auto moduleInfo = il.childModule->getAttr(debug::kDbgModuleInfoAttr))
+    op->setAttr(debug::kDbgModuleInfoAttr, moduleInfo);
   debugScopes.push_back(op);
   il.debugScope = op;
 }
@@ -1529,9 +1540,12 @@ LogicalResult Inliner::run() {
   }
 
   // Delete debug scopes that ended up being unused. Erase them in reverse order
-  // since scopes at the back may have uses on scopes at the front.
+  // since scopes at the back may have uses on scopes at the front. A scope
+  // carrying source-level module info is worth keeping even with no uses: it is
+  // the only remaining record that the instance existed and which source type
+  // it had, and the attribute is not an SSA use.
   for (auto scopeOp : llvm::reverse(debugScopes))
-    if (scopeOp.use_empty())
+    if (scopeOp.use_empty() && !scopeOp->hasAttr(debug::kDbgModuleInfoAttr))
       scopeOp.erase();
   debugScopes.clear();
 
