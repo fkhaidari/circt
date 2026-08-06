@@ -43,6 +43,12 @@ LogicalResult firtool::populatePreprocessTransforms(mlir::PassManager &pm,
     pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
         firrtl::createMaterializeDebugInfo());
 
+  // Must sit between MaterializeDebugInfo, whose variables it checks against,
+  // and LowerFIRRTLTypes, which is what makes an aggregate port unnameable.
+  if (opt.shouldEnableUhdi())
+    pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
+        firrtl::createUhdiInstanceVars());
+
   pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerIntmodules(
       {/*fixupEICGWrapper=*/opt.shouldFixupEICGWrapper()}));
   pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(

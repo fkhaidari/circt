@@ -347,6 +347,17 @@ parseFormatString(mlir::OpBuilder &builder, mlir::Location loc,
 void makeCommonPrefix(SmallString<64> &a, StringRef b);
 
 //===----------------------------------------------------------------------===//
+// Debug info utilities
+//===----------------------------------------------------------------------===//
+
+/// Unpack all aggregates in a FIRRTL value and repack them as debug aggregates.
+/// For example, converts a FIRRTL vector `v` into `dbg.array [v[0],v[1],...]`.
+/// Null for a value the debug dialect cannot describe, such as a reference.
+/// Must run before `LowerFIRRTLTypes` to see the aggregate structure at all;
+/// that pass then rewires the leaves onto the scalars it splits them into.
+Value convertToDebugAggregates(OpBuilder &builder, Value value);
+
+//===----------------------------------------------------------------------===//
 // Object related utilities
 //===----------------------------------------------------------------------===//
 

@@ -28,6 +28,13 @@ namespace circt::debug {
 inline constexpr llvm::StringLiteral kUhdiStableIdAttr = "uhdi.stable_id";
 inline constexpr llvm::StringLiteral kUhdiVerilogRepr = "verilog";
 
+/// Marks a `dbg.variable` that stands for the ports of an instance rather than
+/// for a declaration the user wrote. Read by the emitter, which reports such a
+/// variable under its own `bindKind`, and by the inliner, which drops it along
+/// with the instance it describes.
+inline constexpr llvm::StringLiteral kUhdiInstanceViewAttr =
+    "uhdi.instance_view";
+
 /// Source-level type name and constructor parameters of a module. Stamped on
 /// the module op by the `circt_debug_moduleinfo` intrinsic, and copied onto
 /// the `dbg.scope` of an inlined instance, whose module op no longer exists.

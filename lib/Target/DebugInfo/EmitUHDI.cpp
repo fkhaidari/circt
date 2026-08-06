@@ -813,7 +813,13 @@ static Object emitVariable(
       isOutputPort = true;
       outputPortName = var.getName();
     }
-  entry["bindKind"] = (isPort || isOutputPort) ? "port" : "node";
+  // An instance view is named after the instance and describes its ports; it
+  // is not a declaration the user wrote, and a consumer must not present it as
+  // one.
+  if (var->hasAttr(kUhdiInstanceViewAttr))
+    entry["bindKind"] = "instance";
+  else
+    entry["bindKind"] = (isPort || isOutputPort) ? "port" : "node";
   if (isPort)
     entry["direction"] = "input";
   else if (isOutputPort)

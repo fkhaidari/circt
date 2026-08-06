@@ -759,6 +759,29 @@ def MaterializeDebugInfo :
   let dependentDialects = ["debug::DebugDialect"];
 }
 
+def UhdiInstanceVars : Pass<"firrtl-uhdi-instance-vars", "firrtl::FModuleOp"> {
+  let summary = "Give an instance's ports a debug variable in its parent";
+  let description = [{
+    Synthesize, for each instance, a `dbg.struct` over its ports plus a
+    `dbg.variable` named after the instance, so that the signal on `c.a` has
+    a name in the parent's scope. Nothing else
+    describes an instance's ports from the parent side: `MaterializeDebugInfo`
+    covers ports, wires, nodes and registers only, and the child module's own
+    port variables belong to a different scope.
+
+    Runs before `LowerFIRRTLTypes` on purpose. That pass scalarises an
+    aggregate port into `in_b_0`-style names in which a field and an index are
+    no longer distinguishable, so a reference built afterwards could not name
+    `in.b[0]`. Built beforehand, the aggregate survives: lowering rewires the
+    leaves onto the scalars it splits them into and leaves the field names in
+    the `dbg.struct` alone.
+
+    Only ports that are already used are described. An unconnected port
+    carries no signal to name, and a debug operand would keep it alive.
+  }];
+  let dependentDialects = ["debug::DebugDialect"];
+}
+
 def UhdiInit : Pass<"firrtl-uhdi-init", "firrtl::FModuleOp"> {
   let summary = "Stamp uhdi.stable_id onto the addressable dbg.* ops";
   let description = [{

@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Dialect/FIRRTL/FIRRTLUtils.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/HW/InnerSymbolNamespace.h"
@@ -1098,6 +1099,51 @@ void circt::firrtl::makeCommonPrefix(SmallString<64> &a, StringRef b) {
   auto sep = llvm::sys::path::get_separator();
   while (!a.empty() && !a.ends_with(sep))
     a.pop_back();
+}
+
+Value circt::firrtl::convertToDebugAggregates(OpBuilder &builder, Value value) {
+  return FIRRTLTypeSwitch<Type, Value>(value.getType())
+      .Case<BundleType>([&](auto type) {
+        SmallVector<Value> fields;
+        SmallVector<Attribute> names;
+        SmallVector<Operation *> subOps;
+        for (auto [index, element] : llvm::enumerate(type.getElements())) {
+          auto subOp =
+              SubfieldOp::create(builder, value.getLoc(), value, index);
+          subOps.push_back(subOp);
+          if (auto dbgValue = convertToDebugAggregates(builder, subOp)) {
+            fields.push_back(dbgValue);
+            names.push_back(element.name);
+          }
+        }
+        auto result = debug::StructOp::create(builder, value.getLoc(), fields,
+                                              builder.getArrayAttr(names));
+        for (auto *subOp : subOps)
+          if (subOp->use_empty())
+            subOp->erase();
+        return result;
+      })
+      .Case<FVectorType>([&](auto type) -> Value {
+        SmallVector<Value> elements;
+        SmallVector<Operation *> subOps;
+        for (unsigned index = 0; index < type.getNumElements(); ++index) {
+          auto subOp =
+              SubindexOp::create(builder, value.getLoc(), value, index);
+          subOps.push_back(subOp);
+          if (auto dbgValue = convertToDebugAggregates(builder, subOp))
+            elements.push_back(dbgValue);
+        }
+        Value result;
+        if (!elements.empty() && elements.size() == type.getNumElements())
+          result = debug::ArrayOp::create(builder, value.getLoc(), elements);
+        for (auto *subOp : subOps)
+          if (subOp->use_empty())
+            subOp->erase();
+        return result;
+      })
+      .Case<FIRRTLBaseType>(
+          [&](auto type) { return type.isGround() ? value : Value{}; })
+      .Default({});
 }
 
 PathOp circt::firrtl::createPathRef(Operation *op, hw::HierPathOp nla,
