@@ -8,7 +8,8 @@ firrtl.module @Ports(
   in %inB: !firrtl.bundle<a: sint<19>, b: clock>,
   in %inC: !firrtl.vector<asyncreset, 2>,
   in %inD: !firrtl.bundle<clocks: vector<clock, 4>>,
-  out %outA: !firrtl.uint<42>
+  out %outA: !firrtl.uint<42>,
+  out %outB: !firrtl.bundle<a: uint<1>, b flip: uint<1>>
 ) {
   // CHECK-NEXT: dbg.variable "inA", %inA
 
@@ -32,6 +33,11 @@ firrtl.module @Ports(
   // CHECK-NEXT: dbg.variable "inD", [[TMP7]]
 
   // CHECK-NEXT: dbg.variable "outA", %outA
+
+  // CHECK-NEXT: [[TMP0:%.+]] = firrtl.subfield %outB[a]
+  // CHECK-NEXT: [[TMP1:%.+]] = firrtl.subfield %outB[b]
+  // CHECK-NEXT: [[TMP:%.+]] = dbg.struct {"a": [[TMP0]], "b": [[TMP1]]} {dbg.flips = array<i1: false, true>}
+  // CHECK-NEXT: dbg.variable "outB", [[TMP]]
 
   // CHECK-NEXT: firrtl.matchingconnect
   firrtl.matchingconnect %outA, %inA : !firrtl.uint<42>

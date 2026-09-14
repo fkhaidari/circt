@@ -347,6 +347,21 @@ parseFormatString(mlir::OpBuilder &builder, mlir::Location loc,
 void makeCommonPrefix(SmallString<64> &a, StringRef b);
 
 //===----------------------------------------------------------------------===//
+// Debug info utilities
+//===----------------------------------------------------------------------===//
+
+/// Unpack all aggregates in a FIRRTL value and repack them as debug aggregates.
+/// For example, converts a FIRRTL vector `v` into `dbg.array [v[0],v[1],...]`.
+/// Null for a value the debug dialect cannot describe, such as a reference.
+/// Must run before `LowerFIRRTLTypes` to see the aggregate structure at all;
+/// that pass then rewires the leaves onto the scalars it splits them into.
+/// `keepLeaf`, when given, is asked with each ground leaf's field ID and a
+/// leaf it rejects is left out; a vector missing an element is dropped whole.
+Value convertToDebugAggregates(
+    OpBuilder &builder, Value value,
+    llvm::function_ref<bool(uint64_t fieldID)> keepLeaf = nullptr);
+
+//===----------------------------------------------------------------------===//
 // Object related utilities
 //===----------------------------------------------------------------------===//
 
