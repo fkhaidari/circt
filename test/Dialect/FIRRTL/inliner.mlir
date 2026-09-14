@@ -1624,3 +1624,77 @@ firrtl.circuit "InlineBothModules" {
     %xmr = sv.xmr.ref @path : !hw.inout<i5>
   }
 }
+// -----
+
+// The source-level type name and parameters live on the module op, which
+// inlining erases, so the scope created for the instance has to carry them.
+
+// CHECK-LABEL: firrtl.circuit "InlineDbgModuleInfo"
+firrtl.circuit "InlineDbgModuleInfo" {
+  firrtl.module private @Child() attributes {
+      annotations = [{class = "firrtl.passes.InlineAnnotation"}],
+      dbg.moduleinfo = {params = [{name = "width", value = "8"}],
+                        typeName = "Child"}} {
+    %wire = firrtl.wire : !firrtl.uint<1>
+    dbg.variable "a", %wire : !firrtl.uint<1>
+  }
+  // CHECK: firrtl.module @InlineDbgModuleInfo
+  firrtl.module @InlineDbgModuleInfo() {
+    // CHECK: [[SCOPE:%.+]] = dbg.scope "c0", "Child" {dbg.moduleinfo = {params = [{name = "width", value = "8"}], typeName = "Child"}}
+    // CHECK: dbg.variable "a", {{%.+}} scope [[SCOPE]]
+    firrtl.instance c0 @Child()
+  }
+}
+
+// -----
+
+// A scope with nothing to attribute to it is normally erased as unused, but
+// one carrying module info is the last record that the instance existed and
+// which source type it had, so it stays.
+
+// CHECK-LABEL: firrtl.circuit "InlineDbgModuleInfoEmpty"
+firrtl.circuit "InlineDbgModuleInfoEmpty" {
+  firrtl.module private @Child() attributes {
+      annotations = [{class = "firrtl.passes.InlineAnnotation"}],
+      dbg.moduleinfo = {params = [], typeName = "Child"}} {
+  }
+  // An inlined module without module info still takes the usual path.
+  firrtl.module private @Plain() attributes {
+      annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+  }
+  // CHECK: firrtl.module @InlineDbgModuleInfoEmpty
+  firrtl.module @InlineDbgModuleInfoEmpty() {
+    // CHECK-NEXT: dbg.scope "c0", "Child" {dbg.moduleinfo = {params = [], typeName = "Child"}}
+    // CHECK-NOT: dbg.scope "p0"
+    firrtl.instance c0 @Child()
+    firrtl.instance p0 @Plain()
+  }
+}
+
+// -----
+
+// Inlining a module that itself was inlined into leaves one scope per level,
+// each naming the source type of its own module.
+
+// CHECK-LABEL: firrtl.circuit "InlineDbgModuleInfoNested"
+firrtl.circuit "InlineDbgModuleInfoNested" {
+  firrtl.module private @Grandchild() attributes {
+      annotations = [{class = "firrtl.passes.InlineAnnotation"}],
+      dbg.moduleinfo = {params = [], typeName = "Grandchild"}} {
+    %wire = firrtl.wire : !firrtl.uint<1>
+    dbg.variable "b", %wire : !firrtl.uint<1>
+  }
+  firrtl.module private @Child() attributes {
+      annotations = [{class = "firrtl.passes.InlineAnnotation"}],
+      dbg.moduleinfo = {params = [], typeName = "Child"}} {
+    firrtl.instance g0 @Grandchild()
+  }
+  // CHECK: firrtl.module @InlineDbgModuleInfoNested
+  firrtl.module @InlineDbgModuleInfoNested() {
+    // CHECK: [[C0:%.+]] = dbg.scope "c0", "Child" {dbg.moduleinfo = {params = [], typeName = "Child"}}
+    // CHECK: [[G0:%.+]] = dbg.scope "g0", "Grandchild" scope [[C0]] {dbg.moduleinfo = {params = [], typeName = "Grandchild"}}
+    // CHECK: dbg.variable "b", {{%.+}} scope [[G0]]
+    firrtl.instance c0 @Child()
+  }
+}
+
