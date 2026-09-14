@@ -841,7 +841,7 @@ circt::firtool::FirtoolOptions::FirtoolOptions()
       probesToSignals(false),
       preserveAggregate(firrtl::PreserveAggregate::None),
       preserveMode(firrtl::PreserveValues::None), enableDebugInfo(false),
-      buildMode(BuildModeRelease), disableLayerSink(false),
+      enableUhdi(false), buildMode(BuildModeRelease), disableLayerSink(false),
       disableOptimization(false), vbToBV(false), noDedup(false),
       dedupClasses(true), companionMode(firrtl::CompanionMode::Bind),
       noViews(false), disableAggressiveMergeConnections(false),
