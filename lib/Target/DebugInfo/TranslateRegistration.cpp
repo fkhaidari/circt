@@ -80,9 +80,40 @@ void registerHGLDDTranslation() {
       registerDialects);
 }
 
+void registerUHDITranslation() {
+  static llvm::cl::opt<std::string> sourcePrefix(
+      "uhdi-source-prefix",
+      llvm::cl::desc("Prefix for source file locations in UHDI output"),
+      llvm::cl::init(""));
+  static llvm::cl::opt<std::string> outputPrefix(
+      "uhdi-output-prefix",
+      llvm::cl::desc("Prefix for output file locations in UHDI output"),
+      llvm::cl::init(""));
+  static llvm::cl::opt<bool> onlyExistingFileLocs(
+      "uhdi-only-existing-file-locs",
+      llvm::cl::desc("Only consider locations in files that exist on disk"),
+      llvm::cl::init(false));
+
+  auto getOptions = [] {
+    EmitUHDIOptions opts;
+    opts.sourceFilePrefix = sourcePrefix;
+    opts.outputFilePrefix = outputPrefix;
+    opts.onlyExistingFileLocs = onlyExistingFileLocs;
+    return opts;
+  };
+
+  static TranslateFromMLIRRegistration reg(
+      "emit-uhdi", "emit UHDI pool-based debug information",
+      [=](ModuleOp op, raw_ostream &output) {
+        return emitUHDI(op, output, getOptions());
+      },
+      registerDialects);
+}
+
 void registerTranslations() {
   registerDumpTranslation();
   registerHGLDDTranslation();
+  registerUHDITranslation();
 }
 
 } // namespace debug
