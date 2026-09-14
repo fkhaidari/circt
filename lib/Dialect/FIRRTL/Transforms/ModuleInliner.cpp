@@ -2079,6 +2079,11 @@ void Inliner::createDebugScope(InliningLevel &il, InstanceOp instance,
   auto op = debug::ScopeOp::create(
       il.mic.b, instance.getLoc(), instance.getInstanceNameAttr(),
       instance.getModuleNameAttr().getAttr(), parentScope);
+  // The source-level type name and its parameters live on the module op, which
+  // inlining erases. Carry them onto the scope, so that the debug info of an
+  // inlined instance still says which source type it came from.
+  if (auto moduleInfo = il.childModule->getAttr(debug::kDbgModuleInfoAttr))
+    op->setAttr(debug::kDbgModuleInfoAttr, moduleInfo);
   debugScopes.push_back(op);
   il.debugScope = op;
 }
@@ -2108,9 +2113,12 @@ LogicalResult Inliner::inlineModules() {
   }
 
   // Delete debug scopes that ended up unused.
-  // Erase in reverse: back scopes may have uses on front scopes.
+  // Erase in reverse: back scopes may have uses on front scopes. A scope
+  // carrying source-level module info is worth keeping even with no uses: it is
+  // the only remaining record that the instance existed and which source type
+  // it had, and the attribute is not an SSA use.
   for (auto scopeOp : llvm::reverse(debugScopes))
-    if (scopeOp.use_empty())
+    if (scopeOp.use_empty() && !scopeOp->hasAttr(debug::kDbgModuleInfoAttr))
       scopeOp.erase();
   debugScopes.clear();
 
