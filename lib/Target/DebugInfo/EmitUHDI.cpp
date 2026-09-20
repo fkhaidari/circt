@@ -101,6 +101,14 @@ static std::pair<StringRef, StringRef> splitSourceTypeName(StringRef typeName) {
   return {binding, typeName.slice(open + 1, typeName.size() - 1)};
 }
 
+/// The `x-chisel` object of a `source`, created on first use. Keys that
+/// describe the frontend rather than the hardware live there, so the core of
+/// the document stays language-neutral and a consumer that does not know
+/// Chisel can skip them wholesale.
+static Object &sourceExt(Object &source) {
+  return *source.try_emplace("x-chisel", Object{}).first->second.getAsObject();
+}
+
 /// Serialise a `params` ArrayAttr (frontend JSON preserved by LowerIntrinsics)
 /// into a type's `source.params` array: UHDI sec.6.9 constructor parameters,
 /// e.g. Chisel `Vec`'s `gen` / `length`. Native type preservation (StringAttr
@@ -499,7 +507,7 @@ public:
       if (!e.sourceName.empty()) {
         Object source{{"name", e.sourceName}};
         if (e.params && e.paramsAgree)
-          source["params"] = std::move(*e.params);
+          sourceExt(source)["params"] = std::move(*e.params);
         body["source"] = std::move(source);
       }
       out[e.id] = std::move(body);
@@ -1312,10 +1320,10 @@ Object UhdiEmitter::buildVariableEntry(VarRecord &var) {
     StringRef binding =
         splitSourceTypeName(var.sourceTypeName.getValue()).first;
     if (!binding.empty())
-      source["binding"] = binding.str();
+      sourceExt(source)["binding"] = binding.str();
   }
   if (!var.sourceParams.empty())
-    source["params"] = std::move(var.sourceParams);
+    sourceExt(source)["params"] = std::move(var.sourceParams);
   if (var.sourceLoc)
     source["loc"] = std::move(*var.sourceLoc);
   entry["source"] = std::move(source);
@@ -1391,9 +1399,9 @@ void UhdiEmitter::collectModule(hw::HWModuleOp module, EmitState &s) {
   StringRef sym = module.getNameAttr().getValue();
   ScopeRecord &scope = addScope(sym, "module");
   if (auto typeName = moduleSourceTypeName(module))
-    scope.source["typeName"] = typeName.getValue().str();
+    sourceExt(scope.source)["typeName"] = typeName.getValue().str();
   if (Array params = moduleSourceParams(module); !params.empty())
-    scope.source["params"] = std::move(params);
+    sourceExt(scope.source)["params"] = std::move(params);
   if (auto loc = s.chiselLoc(module.getLoc()))
     scope.source["loc"] = std::move(*loc);
   // The key is the source name; `target.name` is only there when the Verilog
@@ -1408,9 +1416,9 @@ void UhdiEmitter::collectModule(hw::HWModuleOp module, EmitState &s) {
     rec.as = inst.getInstanceName().str();
     rec.moduleRef = inst.getModuleName().str();
     if (auto typeName = moduleSourceTypeName(inst))
-      rec.source["typeName"] = typeName.getValue().str();
+      sourceExt(rec.source)["typeName"] = typeName.getValue().str();
     if (Array params = moduleSourceParams(inst); !params.empty())
-      rec.source["params"] = std::move(params);
+      sourceExt(rec.source)["params"] = std::move(params);
     if (auto loc = s.chiselLoc(inst.getLoc()))
       rec.source["loc"] = std::move(*loc);
     // PrettifyVerilogNames may rename the instance; record only when it
@@ -1431,9 +1439,9 @@ void UhdiEmitter::collectInlineScope(debug::ScopeOp scope, EmitState &s) {
   if (!scope.getInstanceName().empty())
     rec.source["name"] = scope.getInstanceName().str();
   if (auto typeName = moduleSourceTypeName(scope))
-    rec.source["typeName"] = typeName.getValue().str();
+    sourceExt(rec.source)["typeName"] = typeName.getValue().str();
   if (Array params = moduleSourceParams(scope); !params.empty())
-    rec.source["params"] = std::move(params);
+    sourceExt(rec.source)["params"] = std::move(params);
   if (auto loc = s.chiselLoc(scope.getLoc()))
     rec.source["loc"] = std::move(*loc);
 }

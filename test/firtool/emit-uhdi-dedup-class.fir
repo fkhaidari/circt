@@ -40,7 +40,9 @@ circuit Top:
 ; CHECK:          "instances":
 ; CHECK:            "ia":
 ; CHECK-NEXT:         "moduleRef": "A"
-; CHECK:                "typeName": "ClassA"
+; CHECK:                "x-chisel":
+; CHECK-NEXT:             "typeName": "ClassA"
 ; CHECK:            "ib":
 ; CHECK-NEXT:         "moduleRef": "A"
-; CHECK:                "typeName": "ClassB"
+; CHECK:                "x-chisel":
+; CHECK-NEXT:             "typeName": "ClassB"

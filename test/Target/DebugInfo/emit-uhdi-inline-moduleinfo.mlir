@@ -16,14 +16,16 @@ hw.module @Parent(in %en : i1, out o : i1)
 // CHECK:      "modules":
 // CHECK:        "Parent":
 // CHECK:          "source": {
-// CHECK:            "typeName": "Parent"
+// CHECK:            "x-chisel": {
+// CHECK-NEXT:         "typeName": "Parent"
 
 // CHECK:          "scopes": [
 // CHECK-NEXT:       {
 // CHECK-NEXT:         "kind": "inline",
 // CHECK:              "name": "c0",
-// CHECK-NEXT:         "params": [
-// CHECK-NEXT:           {
-// CHECK-NEXT:             "name": "width",
-// CHECK-NEXT:             "value": "8"
-// CHECK:              "typeName": "Child"
+// CHECK-NEXT:         "x-chisel": {
+// CHECK-NEXT:           "params": [
+// CHECK-NEXT:             {
+// CHECK-NEXT:               "name": "width",
+// CHECK-NEXT:               "value": "8"
+// CHECK:                "typeName": "Child"

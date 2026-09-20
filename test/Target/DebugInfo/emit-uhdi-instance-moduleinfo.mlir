@@ -23,12 +23,14 @@ hw.module @Cpu(in %a : i8, out q : i8)
 // CHECK-NOT:      "typeName"
 // CHECK:        "Cpu":
 // CHECK:          "source":
-// CHECK:            "typeName": "Cpu"
+// CHECK:            "x-chisel":
+// CHECK-NEXT:         "typeName": "Cpu"
 // CHECK:          "instances":
 // CHECK:            "alu":
 // CHECK-NEXT:         "moduleRef": "Alu"
 // CHECK:              "source":
-// CHECK:                "params":
+// CHECK:                "x-chisel":
+// CHECK-NEXT:             "params":
 // CHECK:                  "name": "width"
 // CHECK-NEXT:             "type": "Int"
 // CHECK-NEXT:             "value": "8"

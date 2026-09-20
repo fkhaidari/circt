@@ -71,7 +71,8 @@ hw.module @Alu(in %io_in_a : i8, in %io_in_b : i8, in %io_in_op : i2,
 // CHECK:      "modules":
 // CHECK:        "Alu":
 // CHECK:          "source": {
-// CHECK:            "typeName": "Alu"
+// CHECK:            "x-chisel": {
+// CHECK-NEXT:         "typeName": "Alu"
 
 // -----------------------------------------------------------------------
 // One variable, not a parent plus a record per leaf: every leaf that has a
@@ -81,7 +82,8 @@ hw.module @Alu(in %io_in_a : i8, in %io_in_b : i8, in %io_in_op : i2,
 // CHECK:          "variables": {
 // CHECK-NEXT:       "io": {
 // CHECK-NEXT:         "source": {
-// CHECK-NEXT:           "binding": "IO",
+// CHECK:                "x-chisel": {
+// CHECK-NEXT:             "binding": "IO"
 // CHECK-NOT:            "typeName"
 // CHECK:              "target": {
 // CHECK-NEXT:            "verilog": {
@@ -123,8 +125,9 @@ hw.module @Ground(in %clk : i1, in %rst : i1, in %w : i8)
 // CHECK:              "typeRef": "bool_Bool"
 // CHECK:            "w": {
 // CHECK:              "source": {
-// CHECK-NEXT:           "binding": "Wire",
-// CHECK:                 "params": [
+// CHECK:                  "x-chisel": {
+// CHECK-NEXT:               "binding": "Wire",
+// CHECK-NEXT:               "params": [
 // CHECK-NEXT:             {
 // CHECK-NEXT:               "name": "width",
 // CHECK-NEXT:               "type": "Int",

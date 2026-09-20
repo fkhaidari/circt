@@ -43,7 +43,8 @@ circuit Top: %[[
 ; CHECK-NEXT:         "kind": "inline",
 ; CHECK-NEXT:         "source": {
 ; CHECK:                "name": "c0",
-; CHECK-NEXT:           "typeName": "Child"
+; CHECK-NEXT:           "x-chisel": {
+; CHECK-NEXT:             "typeName": "Child"
 ; CHECK-NOT:          "target"
 ; CHECK:              "variables": {
 
@@ -51,7 +52,8 @@ circuit Top: %[[
 ; the declaration half of its Chisel type.
 ; VAR:      "w": {
 ; VAR-NEXT:   "source": {
-; VAR-NEXT:     "binding": "Wire",
+; VAR:          "x-chisel": {
+; VAR-NEXT:       "binding": "Wire"
 ; VAR:        "target": {
 ; VAR-NEXT:     "verilog": "c0_w"
 
