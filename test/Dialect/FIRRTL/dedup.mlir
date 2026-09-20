@@ -1028,3 +1028,32 @@ firrtl.circuit "PublicModuleNoDedup" {
     firrtl.instance bar sym @sym @Bar_2()
   }
 }
+
+// Debug information describes the source language, not the hardware. Modules
+// that differ only in `dbg.*` operations or debug attributes deduplicate.
+// Differing `dbg.struct` field names are what `-g` produces on its own: two
+// bundles of the same shape with differently named fields.
+// CHECK-LABEL: firrtl.circuit "DebugInfo"
+firrtl.circuit "DebugInfo" {
+  // CHECK: firrtl.module private @DebugInfo0
+  firrtl.module private @DebugInfo0(in %a: !firrtl.uint<8>, out %b: !firrtl.uint<8>)
+      attributes {dbg.moduleinfo = {typeName = "ClassA"}} {
+    %w = firrtl.node %a : !firrtl.uint<8>
+    %s = dbg.struct {"a": %w, "b": %w} : !firrtl.uint<8>, !firrtl.uint<8>
+    dbg.variable "wa", %s : !dbg.struct<!firrtl.uint<8>, !firrtl.uint<8>>
+    firrtl.matchingconnect %b, %w : !firrtl.uint<8>
+  }
+  // CHECK-NOT: firrtl.module private @DebugInfo1
+  firrtl.module private @DebugInfo1(in %a: !firrtl.uint<8>, out %b: !firrtl.uint<8>)
+      attributes {dbg.moduleinfo = {typeName = "ClassB"}} {
+    %w = firrtl.node %a : !firrtl.uint<8>
+    %s = dbg.struct {"x": %w, "y": %w} : !firrtl.uint<8>, !firrtl.uint<8>
+    firrtl.matchingconnect %b, %w : !firrtl.uint<8>
+  }
+  firrtl.module @DebugInfo() {
+    // CHECK: firrtl.instance d0 {{.*}}@DebugInfo0
+    // CHECK: firrtl.instance d1 {{.*}}@DebugInfo0
+    %d0_a, %d0_b = firrtl.instance d0 @DebugInfo0(in a: !firrtl.uint<8>, out b: !firrtl.uint<8>)
+    %d1_a, %d1_b = firrtl.instance d1 @DebugInfo1(in a: !firrtl.uint<8>, out b: !firrtl.uint<8>)
+  }
+}

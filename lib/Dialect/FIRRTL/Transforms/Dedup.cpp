@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAttributes.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
@@ -47,6 +48,13 @@ namespace firrtl {
 using namespace circt;
 using namespace firrtl;
 using hw::InnerRefAttr;
+
+/// Debug information describes the source language, not the hardware: two
+/// modules that differ only in debug operations implement the same circuit.
+/// Dedup skips them when hashing and when comparing module bodies.
+static bool isNotDebugOp(Operation &op) {
+  return !isa_and_nonnull<debug::DebugDialect>(op.getDialect());
+}
 
 //===----------------------------------------------------------------------===//
 // Utility function for classifying a Symbol's dedup-ability.
@@ -105,6 +113,8 @@ struct StructuralHasherSharedConstants {
     portNamesAttr = StringAttr::get(context, "portNames");
     nonessentialAttributes.insert(StringAttr::get(context, "annotations"));
     nonessentialAttributes.insert(StringAttr::get(context, "convention"));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgModuleInfoAttr));
     nonessentialAttributes.insert(StringAttr::get(context, "inner_sym"));
     nonessentialAttributes.insert(StringAttr::get(context, "name"));
     nonessentialAttributes.insert(StringAttr::get(context, "portAnnotations"));
@@ -340,7 +350,8 @@ private:
 
   // NOLINTNEXTLINE(misc-no-recursion)
   void update(Block *block) {
-    for (auto &op : llvm::reverse(*block))
+    for (auto &op :
+         llvm::make_filter_range(llvm::reverse(*block), isNotDebugOp))
       update(&op);
     for (auto type : block->getArgumentTypes())
       update(type);
@@ -469,6 +480,8 @@ struct Equivalence {
     nonessentialAttributes.insert(StringAttr::get(context, "portLocations"));
     nonessentialAttributes.insert(StringAttr::get(context, "sym_name"));
     nonessentialAttributes.insert(StringAttr::get(context, "inner_sym"));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgModuleInfoAttr));
   }
 
   struct ModuleData {
@@ -609,10 +622,12 @@ struct Equivalence {
     }
 
     // Blocks operations.
-    auto aIt = aBlock.begin();
-    auto aEnd = aBlock.end();
-    auto bIt = bBlock.begin();
-    auto bEnd = bBlock.end();
+    auto aOps = llvm::make_filter_range(aBlock, isNotDebugOp);
+    auto bOps = llvm::make_filter_range(bBlock, isNotDebugOp);
+    auto aIt = aOps.begin();
+    auto aEnd = aOps.end();
+    auto bIt = bOps.begin();
+    auto bEnd = bOps.end();
     while (aIt != aEnd && bIt != bEnd)
       if (failed(check(diag, data, &*aIt++, &*bIt++)))
         return failure();
