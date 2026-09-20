@@ -134,9 +134,11 @@ static Array renderTypeSourceParams(ArrayAttr params) {
 }
 
 /// Source-language type name and constructor params recorded by
-/// `dbg.moduleinfo`. The attribute is set once per module by the intrinsic
-/// lowering and rides through FIRRTL->HW lowering; inlining copies it onto the
-/// `dbg.scope` it creates, since the module op it lived on is gone by then.
+/// `dbg.moduleinfo`. The intrinsic lowering sets the attribute on the module,
+/// and PropagateDebugClassInfo moves it onto every instance of that module, so
+/// it is read off the instance. A module with no instantiation site keeps its
+/// own record, and inlining copies the record onto the `dbg.scope` it creates,
+/// since the instance is gone by then.
 static StringAttr moduleSourceTypeName(Operation *op) {
   if (auto miAttr = op->getAttrOfType<DictionaryAttr>(kDbgModuleInfoAttr))
     return miAttr.getAs<StringAttr>("typeName");
@@ -1405,6 +1407,10 @@ void UhdiEmitter::collectModule(hw::HWModuleOp module, EmitState &s) {
     InstanceRecord rec;
     rec.as = inst.getInstanceName().str();
     rec.moduleRef = inst.getModuleName().str();
+    if (auto typeName = moduleSourceTypeName(inst))
+      rec.source["typeName"] = typeName.getValue().str();
+    if (Array params = moduleSourceParams(inst); !params.empty())
+      rec.source["params"] = std::move(params);
     if (auto loc = s.chiselLoc(inst.getLoc()))
       rec.source["loc"] = std::move(*loc);
     // PrettifyVerilogNames may rename the instance; record only when it

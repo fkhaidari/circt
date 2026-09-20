@@ -18,6 +18,7 @@ def DebugDialect : Dialect {
   let cppNamespace = "circt::debug";
 
   let useDefaultTypePrinterParser = 1;
+  let hasOperationAttrVerify = 1;
 
   let extraClassDeclaration = [{
     void registerOps();

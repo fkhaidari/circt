@@ -3796,15 +3796,13 @@ firrtl.circuit "MultiRootDeterminism" {
 }
 // -----
 
-// The source-level type name and parameters live on the module op, which
-// inlining erases, so the scope created for the instance has to carry them.
+// The source-level type name and parameters ride on the instance, which
+// inlining erases, so the scope created for it has to carry them.
 
 // CHECK-LABEL: firrtl.circuit "InlineDbgModuleInfo"
 firrtl.circuit "InlineDbgModuleInfo" {
   firrtl.module private @Child() attributes {
-      annotations = [{class = "firrtl.passes.InlineAnnotation"}],
-      dbg.moduleinfo = {params = [{name = "width", value = "8"}],
-                        typeName = "Child"}} {
+      annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
     %wire = firrtl.wire : !firrtl.uint<1>
     dbg.variable "a", %wire : !firrtl.uint<1>
   }
@@ -3812,7 +3810,8 @@ firrtl.circuit "InlineDbgModuleInfo" {
   firrtl.module @InlineDbgModuleInfo() {
     // CHECK: [[SCOPE:%.+]] = dbg.scope "c0", "Child" {dbg.moduleinfo = {params = [{name = "width", value = "8"}], typeName = "Child"}}
     // CHECK: dbg.variable "a", {{%.+}} scope [[SCOPE]]
-    firrtl.instance c0 @Child()
+    firrtl.instance c0 {dbg.moduleinfo = {params = [{name = "width", value = "8"}],
+                                          typeName = "Child"}} @Child()
   }
 }
 
@@ -3825,8 +3824,7 @@ firrtl.circuit "InlineDbgModuleInfo" {
 // CHECK-LABEL: firrtl.circuit "InlineDbgModuleInfoEmpty"
 firrtl.circuit "InlineDbgModuleInfoEmpty" {
   firrtl.module private @Child() attributes {
-      annotations = [{class = "firrtl.passes.InlineAnnotation"}],
-      dbg.moduleinfo = {params = [], typeName = "Child"}} {
+      annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
   }
   // An inlined module without module info still takes the usual path.
   firrtl.module private @Plain() attributes {
@@ -3836,7 +3834,7 @@ firrtl.circuit "InlineDbgModuleInfoEmpty" {
   firrtl.module @InlineDbgModuleInfoEmpty() {
     // CHECK-NEXT: dbg.scope "c0", "Child" {dbg.moduleinfo = {params = [], typeName = "Child"}}
     // CHECK-NOT: dbg.scope "p0"
-    firrtl.instance c0 @Child()
+    firrtl.instance c0 {dbg.moduleinfo = {params = [], typeName = "Child"}} @Child()
     firrtl.instance p0 @Plain()
   }
 }
@@ -3849,22 +3847,21 @@ firrtl.circuit "InlineDbgModuleInfoEmpty" {
 // CHECK-LABEL: firrtl.circuit "InlineDbgModuleInfoNested"
 firrtl.circuit "InlineDbgModuleInfoNested" {
   firrtl.module private @Grandchild() attributes {
-      annotations = [{class = "firrtl.passes.InlineAnnotation"}],
-      dbg.moduleinfo = {params = [], typeName = "Grandchild"}} {
+      annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
     %wire = firrtl.wire : !firrtl.uint<1>
     dbg.variable "b", %wire : !firrtl.uint<1>
   }
   firrtl.module private @Child() attributes {
-      annotations = [{class = "firrtl.passes.InlineAnnotation"}],
-      dbg.moduleinfo = {params = [], typeName = "Child"}} {
-    firrtl.instance g0 @Grandchild()
+      annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    firrtl.instance g0 {dbg.moduleinfo = {params = [], typeName = "Grandchild"}}
+        @Grandchild()
   }
   // CHECK: firrtl.module @InlineDbgModuleInfoNested
   firrtl.module @InlineDbgModuleInfoNested() {
     // CHECK: [[C0:%.+]] = dbg.scope "c0", "Child" {dbg.moduleinfo = {params = [], typeName = "Child"}}
     // CHECK: [[G0:%.+]] = dbg.scope "g0", "Grandchild" scope [[C0]] {dbg.moduleinfo = {params = [], typeName = "Grandchild"}}
     // CHECK: dbg.variable "b", {{%.+}} scope [[G0]]
-    firrtl.instance c0 @Child()
+    firrtl.instance c0 {dbg.moduleinfo = {params = [], typeName = "Child"}} @Child()
   }
 }
 

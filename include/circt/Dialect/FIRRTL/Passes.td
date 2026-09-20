@@ -737,6 +737,27 @@ def DropConst : Pass<"firrtl-drop-const", "firrtl::CircuitOp"> {
   }];
 }
 
+def PropagateDebugClassInfo : Pass<"firrtl-propagate-debug-class-info",
+    "firrtl::CircuitOp"> {
+  let summary = "Move source-language class info onto instances";
+  let description = [{
+    This pass moves the `dbg.moduleinfo` record, which names the source-language
+    class a module was elaborated from, off the module and onto the instances of
+    that module.
+
+    On the module the record is a property of the definition, so deduplication
+    has to either keep the definitions apart or drop the record of the module it
+    merges away. On the instance it describes one instantiation, which survives
+    the merge.
+
+    A module keeps its record when there is nowhere to move it to: it has no
+    instantiation site, or one of them names several modules that disagree.
+
+    TODO: remove this pass once the frontend records the class at the
+    instantiation site.
+  }];
+}
+
 def FinalizeIR : Pass<"firrtl-finalize-ir", "mlir::ModuleOp"> {
   let summary = "Perform final IR mutations after ExportVerilog";
   let description = [{

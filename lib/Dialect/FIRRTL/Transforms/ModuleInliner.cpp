@@ -2079,10 +2079,10 @@ void Inliner::createDebugScope(InliningLevel &il, InstanceOp instance,
   auto op = debug::ScopeOp::create(
       il.mic.b, instance.getLoc(), instance.getInstanceNameAttr(),
       instance.getModuleNameAttr().getAttr(), parentScope);
-  // The source-level type name and its parameters live on the module op, which
+  // The source-level type name and its parameters ride on the instance, which
   // inlining erases. Carry them onto the scope, so that the debug info of an
   // inlined instance still says which source type it came from.
-  if (auto moduleInfo = il.childModule->getAttr(debug::kDbgModuleInfoAttr))
+  if (auto moduleInfo = instance->getAttr(debug::kDbgModuleInfoAttr))
     op->setAttr(debug::kDbgModuleInfoAttr, moduleInfo);
   debugScopes.push_back(op);
   il.debugScope = op;

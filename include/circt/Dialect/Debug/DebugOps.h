@@ -27,8 +27,11 @@ namespace circt::debug {
 inline constexpr llvm::StringLiteral kUhdiVerilogRepr = "verilog";
 
 /// Source-level type name and constructor parameters of a module. Stamped on
-/// the module op by the `circt_debug_moduleinfo` intrinsic, and copied onto
-/// the `dbg.scope` of an inlined instance, whose module op no longer exists.
+/// the module op by the `circt_debug_moduleinfo` intrinsic, then moved onto
+/// the instances of that module by `PropagateDebugClassInfo`, since the class
+/// belongs to the instantiation and dedup may merge two classes into one
+/// module. An inlined instance carries it on its `dbg.scope`, whose module op
+/// no longer exists.
 inline constexpr llvm::StringLiteral kDbgModuleInfoAttr = "dbg.moduleinfo";
 
 /// Which fields of a `dbg.struct` are flipped relative to the struct, as a
