@@ -4141,6 +4141,7 @@ LogicalResult FIRRTLLowering::visitDecl(InstanceOp oldInstance) {
   auto newInstance =
       hw::InstanceOp::create(builder, newModule, oldInstance.getNameAttr(),
                              operands, parameters, innerSym);
+  newInstance->setDiscardableAttrs(oldInstance->getDiscardableAttrDictionary());
 
   if (oldInstance.getLowerToBind() || oldInstance.getDoNotPrint())
     newInstance.setDoNotPrintAttr(builder.getUnitAttr());
@@ -4243,6 +4244,9 @@ LogicalResult FIRRTLLowering::visitDecl(InstanceChoiceOp oldInstanceChoice) {
     auto inst =
         hw::InstanceOp::create(builder, newMod, builder.getStringAttr(instName),
                                inputOperands, parameters, nullptr);
+    // One source-level instance, so every lowered copy carries its attributes.
+    inst->setDiscardableAttrs(
+        oldInstanceChoice->getDiscardableAttrDictionary());
     (void)getOrAddInnerSym(
         hw::InnerSymTarget(inst.getOperation()),
         [&]() -> hw::InnerSymbolNamespace & { return moduleNamespace; });

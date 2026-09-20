@@ -2613,8 +2613,7 @@ InstanceOp::cloneWithErasedPorts(const llvm::BitVector &erasures) {
       getAnnotations().getValue(), newPortAnnotations, getLayers(),
       getLowerToBind(), getDoNotPrint(), getInnerSymAttr());
 
-  if (auto outputFile = (*this)->getAttr("output_file"))
-    clone->setAttr("output_file", outputFile);
+  clone->setDiscardableAttrs((*this)->getDiscardableAttrDictionary());
 
   return clone;
 }
@@ -2718,8 +2717,7 @@ FInstanceLike InstanceOp::cloneWithInsertedPorts(
       getAnnotations().getValue(), newPortAnnos, getLayers(), getLowerToBind(),
       getDoNotPrint(), getInnerSymAttr());
 
-  if (auto outputFile = (*this)->getAttr("output_file"))
-    clone->setAttr("output_file", outputFile);
+  clone->setDiscardableAttrs((*this)->getDiscardableAttrDictionary());
 
   return clone;
 }
@@ -3292,8 +3290,7 @@ FInstanceLike InstanceChoiceOp::cloneWithInsertedPorts(
       ArrayAttr::get(context, newPortAnnos), getLayers(), getInnerSymAttr(),
       getInstanceMacroAttr());
 
-  if (auto outputFile = (*this)->getAttr("output_file"))
-    clone->setAttr("output_file", outputFile);
+  clone->setDiscardableAttrs((*this)->getDiscardableAttrDictionary());
 
   return clone;
 }
@@ -3331,8 +3328,7 @@ InstanceChoiceOp::cloneWithErasedPorts(const llvm::BitVector &erasures) {
       getAnnotationsAttr(), ArrayAttr::get(getContext(), newPortAnnotations),
       getLayers(), getInnerSymAttr(), getInstanceMacroAttr());
 
-  if (auto outputFile = (*this)->getAttr("output_file"))
-    clone->setAttr("output_file", outputFile);
+  clone->setDiscardableAttrs((*this)->getDiscardableAttrDictionary());
 
   return clone;
 }

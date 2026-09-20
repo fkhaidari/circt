@@ -151,6 +151,23 @@ firrtl.circuit "PreserveOutputFile" {
 
 // -----
 
+// Discardable attributes on an instance survive port removal. IMDeadCodeElim
+// rebuilds the instance, and whatever the clone drops is lost for good.
+//
+// CHECK-LABEL: "PreserveInstanceAttributes"
+firrtl.circuit "PreserveInstanceAttributes" {
+  // expected-warning @+1{{module `Sub` is empty but cannot be removed because the module has ports "b" are referenced by name or dontTouched}}
+  firrtl.module private @Sub(in %a: !firrtl.uint<1>, in %b: !firrtl.uint<1> sym @sym) {}
+  // CHECK: firrtl.module @PreserveInstanceAttributes
+  firrtl.module @PreserveInstanceAttributes() {
+    // CHECK-NEXT: firrtl.instance sub
+    // CHECK-SAME: dbg.moduleinfo = {typeName = "MySub"}
+    firrtl.instance sub {dbg.moduleinfo = {typeName = "MySub"}} @Sub(in a: !firrtl.uint<1>, in b: !firrtl.uint<1>)
+  }
+}
+
+// -----
+
 // CHECK-LABEL: "DeleteEmptyModule"
 firrtl.circuit "DeleteEmptyModule" {
   // CHECK: firrtl.module private @empty
