@@ -1653,6 +1653,19 @@ private:
   /// recorded if the "fromModule" carries no debug info.
   void mergeDebugOrigins(FModuleLike toModule, FModuleLike fromModule) {
     auto moduleInfo = fromModule->getAttr(debug::kDbgModuleInfoAttr);
+    // PropagateDebugClassInfo may have moved the record onto the instances.
+    // Take it back from there when they all agree on it.
+    if (!moduleInfo) {
+      auto *node = instanceGraph.lookup(fromModule.getModuleNameAttr());
+      for (auto *use : node->uses()) {
+        auto info = use->getInstance()->getAttr(debug::kDbgModuleInfoAttr);
+        if (!info || (moduleInfo && info != moduleInfo)) {
+          moduleInfo = {};
+          break;
+        }
+        moduleInfo = info;
+      }
+    }
     auto fromOrigins =
         fromModule->getAttrOfType<DictionaryAttr>(debug::kDbgOriginsAttr);
     bool hasDebugOps = fromModule

@@ -96,6 +96,22 @@ firrtl.circuit "ModuleInfo" {
   }
 }
 
+// Class info already moved onto the instances is taken back from there.
+// CHECK-LABEL: firrtl.circuit "InstanceInfo"
+firrtl.circuit "InstanceInfo" {
+  // CHECK:      firrtl.module private @A()
+  // CHECK-SAME:   dbg.origins = {B = {loc = {{.+}}, moduleinfo = {typeName = "ClassB"}}}
+  firrtl.module private @A() {}
+  firrtl.module private @B() {}
+  firrtl.module @InstanceInfo() {
+    // CHECK: firrtl.instance a {dbg.moduleinfo = {typeName = "ClassA"}} @A()
+    // CHECK: firrtl.instance b {dbg.moduleinfo = {typeName = "ClassB"}} @A()
+    firrtl.instance a {dbg.moduleinfo = {typeName = "ClassA"}} @A()
+    firrtl.instance b {dbg.moduleinfo = {typeName = "ClassB"}} @B()
+    firrtl.instance b2 {dbg.moduleinfo = {typeName = "ClassB"}} @B()
+  }
+}
+
 // Three equal modules all merge into the first one. A merged module that kept
 // other modules earlier passes on their `dbg.origins` and `dbg.origin` tags.
 // CHECK-LABEL: firrtl.circuit "Chain"
