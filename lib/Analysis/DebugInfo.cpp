@@ -92,13 +92,27 @@ void DebugInfoBuilder::visitModule(hw::HWModuleOp moduleOp, DIModule &module) {
 
   // Check what kind of DI is present in the module. Also create additional
   // `DIModule` hierarchy levels for each explicit scope op in the module.
+  //
+  // Leave out the debug ops dedup moved in from the modules it merged away
+  // (`dbg.origin` on the root ops), as if they had been erased with their
+  // module.
   SmallDenseMap<debug::ScopeOp, DIModule *> scopes;
+  DenseSet<Operation *> mergedScopes;
+  auto isMerged = [&](Operation *op, Value parent) {
+    return op->hasAttr(debug::kDbgOriginAttr) ||
+           (parent && mergedScopes.contains(parent.getDefiningOp()));
+  };
   bool hasVariables = false;
   bool hasInstances = false;
   moduleOp.walk([&](Operation *op) {
-    if (isa<debug::VariableOp>(op))
-      hasVariables = true;
+    if (auto varOp = dyn_cast<debug::VariableOp>(op))
+      if (!isMerged(varOp, varOp.getScope()))
+        hasVariables = true;
     if (auto scopeOp = dyn_cast<debug::ScopeOp>(op)) {
+      if (isMerged(scopeOp, scopeOp.getScope())) {
+        mergedScopes.insert(scopeOp);
+        return;
+      }
       auto *node = createModule();
       node->isInline = true;
       node->name = scopeOp.getModuleNameAttr();
@@ -137,16 +151,19 @@ void DebugInfoBuilder::visitModule(hw::HWModuleOp moduleOp, DIModule &module) {
   // Fill in any missing DI as a fallback.
   moduleOp->walk([&](Operation *op) {
     if (auto varOp = dyn_cast<debug::VariableOp>(op)) {
+      if (isMerged(varOp, varOp.getScope()))
+        return;
       auto *var = createVariable();
       var->name = varOp.getNameAttr();
       var->loc = varOp.getLoc();
       var->value = varOp.getValue();
-      var->origin = varOp->getAttrOfType<StringAttr>(debug::kDbgOriginAttr);
       getScope(varOp.getScope()).variables.push_back(var);
       return;
     }
 
     if (auto scopeOp = dyn_cast<debug::ScopeOp>(op)) {
+      if (mergedScopes.contains(scopeOp))
+        return;
       auto *instance = createInstance();
       instance->name = scopeOp.getInstanceNameAttr();
       instance->op = scopeOp;

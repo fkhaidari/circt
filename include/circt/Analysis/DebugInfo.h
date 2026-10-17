@@ -57,9 +57,6 @@ struct DIVariable {
   LocationAttr loc;
   /// The SSA value representing the value of this variable.
   Value value = nullptr;
-  /// The module dedup moved this variable out of (`dbg.origin`); null if it
-  /// was declared in the module it sits in.
-  StringAttr origin;
 };
 
 /// Debug information attached to an operation and the operations nested within.

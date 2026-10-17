@@ -1484,8 +1484,23 @@ void UhdiEmitter::collect(mlir::ModuleOp top) {
   // 2. Inline scopes, so a variable can be filed under one straight away. A
   // scope references its container through an SSA operand, which dominance puts
   // ahead of it, so one pass in walk order is enough to nest them.
+  // Layout 1 has no place for the modules dedup merged away, so it leaves out
+  // the debug ops dedup moved out of them (`dbg.origin` on the root ops), as
+  // if they had been erased with their module.
+  llvm::DenseSet<Operation *> mergedScopes;
+  auto isMerged = [&](Operation *op, Value parent) {
+    if (options.format != 1)
+      return false;
+    if (op->hasAttr(kDbgOriginAttr))
+      return true;
+    return parent && mergedScopes.contains(parent.getDefiningOp());
+  };
   SmallVector<std::pair<unsigned, std::optional<unsigned>>> inlineContainers;
   top.walk([&](debug::ScopeOp scope) {
+    if (isMerged(scope, scope.getScope())) {
+      mergedScopes.insert(scope);
+      return;
+    }
     collectInlineScope(scope, s);
     inlineContainers.emplace_back(scopes.size() - 1, containerOf(scope));
   });
@@ -1497,6 +1512,8 @@ void UhdiEmitter::collect(mlir::ModuleOp top) {
   // coverage step 4 consumes — so step 4 doesn't re-walk.
   llvm::DenseMap<hw::HWModuleOp, llvm::DenseSet<unsigned>> coveredPortsByMod;
   top.walk([&](debug::VariableOp var) {
+    if (isMerged(var, var.getScope()))
+      return;
     ScopeRecord *scope = ownerScope(var);
     if (!scope)
       return;
