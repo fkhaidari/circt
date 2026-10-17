@@ -1057,3 +1057,41 @@ firrtl.circuit "DebugInfo" {
     %d1_a, %d1_b = firrtl.instance d1 @DebugInfo1(in a: !firrtl.uint<8>, out b: !firrtl.uint<8>)
   }
 }
+
+// Debug ops present in only one module must not shift the op pairing when
+// the blocks are merged.
+// CHECK-LABEL: firrtl.circuit "DebugMisaligned"
+firrtl.circuit "DebugMisaligned" {
+  // CHECK: firrtl.module private @DbgA
+  firrtl.module private @DbgA(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>) {
+    dbg.variable "extra", %p : !firrtl.uint<8>
+    %w = firrtl.wire sym @wsymA : !firrtl.uint<8>
+    firrtl.matchingconnect %w, %p : !firrtl.uint<8>
+    firrtl.matchingconnect %q, %w : !firrtl.uint<8>
+  }
+  // CHECK-NOT: firrtl.module private @DbgB
+  firrtl.module private @DbgB(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>) {
+    %w = firrtl.wire sym @wsymB : !firrtl.uint<8>
+    firrtl.matchingconnect %w, %p : !firrtl.uint<8>
+    firrtl.matchingconnect %q, %w : !firrtl.uint<8>
+  }
+  // CHECK-NOT: firrtl.module private @DbgC
+  firrtl.module private @DbgC(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>) {
+    %w = firrtl.wire sym @wsymC : !firrtl.uint<8>
+    %s = dbg.struct {"a": %w, "b": %p} : !firrtl.uint<8>, !firrtl.uint<8>
+    dbg.variable "agg", %s : !dbg.struct<!firrtl.uint<8>, !firrtl.uint<8>>
+    firrtl.matchingconnect %w, %p : !firrtl.uint<8>
+    firrtl.matchingconnect %q, %w : !firrtl.uint<8>
+  }
+  firrtl.module @DebugMisaligned(in %a: !firrtl.uint<8>, out %x: !firrtl.uint<8>, out %y: !firrtl.uint<8>, out %z: !firrtl.uint<8>) {
+    %ia_p, %ia_q = firrtl.instance ia @DbgA(in p: !firrtl.uint<8>, out q: !firrtl.uint<8>)
+    %ib_p, %ib_q = firrtl.instance ib @DbgB(in p: !firrtl.uint<8>, out q: !firrtl.uint<8>)
+    %ic_p, %ic_q = firrtl.instance ic @DbgC(in p: !firrtl.uint<8>, out q: !firrtl.uint<8>)
+    firrtl.matchingconnect %ia_p, %a : !firrtl.uint<8>
+    firrtl.matchingconnect %ib_p, %a : !firrtl.uint<8>
+    firrtl.matchingconnect %ic_p, %a : !firrtl.uint<8>
+    firrtl.matchingconnect %x, %ia_q : !firrtl.uint<8>
+    firrtl.matchingconnect %y, %ib_q : !firrtl.uint<8>
+    firrtl.matchingconnect %z, %ic_q : !firrtl.uint<8>
+  }
+}

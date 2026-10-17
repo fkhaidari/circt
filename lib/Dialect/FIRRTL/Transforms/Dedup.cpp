@@ -1588,7 +1588,8 @@ private:
       if (toArg.getLoc() != fromArg.getLoc())
         toArg.setLoc(mergeLoc(context, toArg.getLoc(), fromArg.getLoc()));
 
-    for (auto ops : llvm::zip(toBlock, fromBlock))
+    for (auto ops : llvm::zip(llvm::make_filter_range(toBlock, isNotDebugOp),
+                              llvm::make_filter_range(fromBlock, isNotDebugOp)))
       mergeOps(renameMap, toModule, &std::get<0>(ops), fromModule,
                &std::get<1>(ops));
   }
