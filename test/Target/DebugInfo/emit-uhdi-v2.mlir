@@ -5,7 +5,7 @@
 
 #locChild = loc("Child.scala":1:1)
 #locIo = loc("Child.scala":2:3)
-#locReg = loc("Child.scala":3:3)
+#locReg = loc(fused["Child.scala":3:3, fused<"verilogLocations">["out.sv":9:5]])
 #locLost = loc("Child.scala":4:3)
 #locTop = loc("Top.scala":1:1)
 #locInst = loc("Top.scala":4:5)
@@ -26,7 +26,7 @@ hw.module @Child(in %a : i8, in %op : i2, out b : i8) {
   dbg.variable "r", %r : !dbg.value loc(#locReg)
   dbg.variable "lost", %0 : i8 loc(#locLost)
   hw.output %a : i8
-} loc(#locChild)
+} loc(fused[#locChild, fused<"verilogLocations">["out.sv":7:1]])
 
 hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo = {typeName = "Top"}} {
   %c5_i8 = hw.constant 5 : i8
@@ -50,6 +50,12 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:   {
 // CHECK-NEXT:     "path": "Top.scala"
 // CHECK-NEXT:   },
+
+// Target files follow the source files in the one list.
+// CHECK:            "path": "out.sv",
+// CHECK-NEXT:     "target": true
+// CHECK-NEXT:   }
+// CHECK-NEXT: ],
 
 // Struct fields carry their own type; an enum maps labels to values.
 // CHECK:      "types": {
@@ -126,7 +132,9 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // An instance is keyed by its Verilog name. An extern module has no source,
 // so its instance names none.
 // CHECK:      "target": {
-// CHECK-NEXT:   "Child": {},
+// CHECK-NEXT:   "Child": {
+// CHECK-NEXT:     "file": [[SV:[0-9]+]]
+// CHECK-NEXT:   },
 // CHECK-NEXT:   "Ext": {
 // CHECK-NEXT:     "kind": "extern"
 // CHECK-NEXT:   },
@@ -148,9 +156,17 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:       }
 
 // A struct value is an object, a vector an array. A value optimized away is
-// marked as such, in a vector too.
+// marked as such, in a vector too. `hdl_locs` keeps the Verilog side of a
+// location, in the target file.
 // CHECK:      "bindings": [
 // CHECK-NEXT:   {
+// CHECK-NEXT:     "hdl_locs": {
+// CHECK-NEXT:       "r": [
+// CHECK-NEXT:         [[SV]],
+// CHECK-NEXT:         9,
+// CHECK-NEXT:         5
+// CHECK-NEXT:       ]
+// CHECK-NEXT:     },
 // CHECK-NEXT:     "source": "Child",
 // CHECK-NEXT:     "target": "Child",
 // CHECK-NEXT:     "vars": {
