@@ -115,6 +115,8 @@ struct StructuralHasherSharedConstants {
     nonessentialAttributes.insert(StringAttr::get(context, "convention"));
     nonessentialAttributes.insert(
         StringAttr::get(context, debug::kDbgModuleInfoAttr));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgOriginsAttr));
     nonessentialAttributes.insert(StringAttr::get(context, "inner_sym"));
     nonessentialAttributes.insert(StringAttr::get(context, "name"));
     nonessentialAttributes.insert(StringAttr::get(context, "portAnnotations"));
@@ -482,6 +484,8 @@ struct Equivalence {
     nonessentialAttributes.insert(StringAttr::get(context, "inner_sym"));
     nonessentialAttributes.insert(
         StringAttr::get(context, debug::kDbgModuleInfoAttr));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgOriginsAttr));
   }
 
   struct ModuleData {
@@ -1046,6 +1050,9 @@ struct Deduper {
     // A map of operation (e.g. wires, nodes) names which are changed, which is
     // used to update NLAs that reference the "fromModule".
     RenameMap renameMap;
+    // Maps the values of the "fromModule" to their counterparts in the
+    // "toModule", used to clone its debug ops.
+    IRMapping mapping;
 
     // Merge the port locations.
     SmallVector<Attribute> newLocs;
@@ -1060,7 +1067,8 @@ struct Deduper {
     toModule->setAttr("portLocations", ArrayAttr::get(context, newLocs));
 
     // Merge the two modules.
-    mergeOps(renameMap, toModule, toModule, fromModule, fromModule);
+    mergeOps(renameMap, mapping, toModule, toModule, fromModule, fromModule);
+    mergeDebugOrigins(toModule, fromModule);
 
     // Rewrite NLAs pathing through these modules to refer to the to module. It
     // is safe to do this at this point because NLAs cannot be one element long.
@@ -1561,16 +1569,18 @@ private:
 
   /// Recursively merge two operations.
   // NOLINTNEXTLINE(misc-no-recursion)
-  void mergeOps(RenameMap &renameMap, FModuleLike toModule, Operation *to,
-                FModuleLike fromModule, Operation *from) {
+  void mergeOps(RenameMap &renameMap, IRMapping &mapping, FModuleLike toModule,
+                Operation *to, FModuleLike fromModule, Operation *from) {
     // Merge the operation locations.
     if (to->getLoc() != from->getLoc())
       to->setLoc(mergeLoc(context, to->getLoc(), from->getLoc()));
 
+    mapping.map(from->getResults(), to->getResults());
+
     // Recurse into any regions.
     for (auto regions : llvm::zip(to->getRegions(), from->getRegions()))
-      mergeRegions(renameMap, toModule, std::get<0>(regions), fromModule,
-                   std::get<1>(regions));
+      mergeRegions(renameMap, mapping, toModule, std::get<0>(regions),
+                   fromModule, std::get<1>(regions));
 
     // Record any inner_sym renamings that happened.
     recordSymRenames(renameMap, toModule, to, fromModule, from);
@@ -1580,27 +1590,94 @@ private:
   }
 
   /// Recursively merge two blocks.
-  void mergeBlocks(RenameMap &renameMap, FModuleLike toModule, Block &toBlock,
-                   FModuleLike fromModule, Block &fromBlock) {
+  void mergeBlocks(RenameMap &renameMap, IRMapping &mapping,
+                   FModuleLike toModule, Block &toBlock, FModuleLike fromModule,
+                   Block &fromBlock) {
     // Merge the block locations.
     for (auto [toArg, fromArg] :
          llvm::zip(toBlock.getArguments(), fromBlock.getArguments()))
       if (toArg.getLoc() != fromArg.getLoc())
         toArg.setLoc(mergeLoc(context, toArg.getLoc(), fromArg.getLoc()));
+    mapping.map(fromBlock.getArguments(), toBlock.getArguments());
 
-    for (auto ops : llvm::zip(llvm::make_filter_range(toBlock, isNotDebugOp),
-                              llvm::make_filter_range(fromBlock, isNotDebugOp)))
-      mergeOps(renameMap, toModule, &std::get<0>(ops), fromModule,
-               &std::get<1>(ops));
+    // Debug ops are not compared, so only the other ops are paired. A debug op
+    // of the "fromModule" is cloned after the debug ops of the "toModule" that
+    // follow the last paired op, after everything its operands are mapped to.
+    auto toIt = toBlock.begin();
+    for (auto &fromOp : fromBlock) {
+      while (toIt != toBlock.end() && !isNotDebugOp(*toIt))
+        ++toIt;
+      if (!isNotDebugOp(fromOp)) {
+        cloneDebugOp(mapping, toBlock, toIt, fromModule, fromOp);
+        continue;
+      }
+      if (toIt == toBlock.end())
+        break;
+      mergeOps(renameMap, mapping, toModule, &*toIt++, fromModule, &fromOp);
+    }
   }
 
   // Recursively merge two regions.
-  void mergeRegions(RenameMap &renameMap, FModuleLike toModule,
-                    Region &toRegion, FModuleLike fromModule,
-                    Region &fromRegion) {
+  void mergeRegions(RenameMap &renameMap, IRMapping &mapping,
+                    FModuleLike toModule, Region &toRegion,
+                    FModuleLike fromModule, Region &fromRegion) {
     for (auto blocks : llvm::zip(toRegion, fromRegion))
-      mergeBlocks(renameMap, toModule, std::get<0>(blocks), fromModule,
+      mergeBlocks(renameMap, mapping, toModule, std::get<0>(blocks), fromModule,
                   std::get<1>(blocks));
+  }
+
+  /// Clone a debug op of the "fromModule" into the "toModule" before `toIt`,
+  /// so that the debug info of the erased module survives. A root op is
+  /// tagged with the module it came from, unless an earlier dedup did that.
+  void cloneDebugOp(IRMapping &mapping, Block &toBlock, Block::iterator toIt,
+                    FModuleLike fromModule, Operation &fromOp) {
+    // Operands are defined by paired ops, block arguments or debug ops cloned
+    // before. Drop the op if one is not mapped rather than keep a use of the
+    // erased module.
+    if (!llvm::all_of(fromOp.getOperands(),
+                      [&](Value value) { return mapping.contains(value); }))
+      return;
+    OpBuilder builder(context);
+    builder.setInsertionPoint(&toBlock, toIt);
+    auto *op = builder.clone(fromOp, mapping);
+
+    bool isRoot = isa<debug::VariableOp>(op);
+    if (auto scope = dyn_cast<debug::ScopeOp>(op))
+      isRoot = !scope.getScope();
+    if (isRoot && !op->hasAttr(debug::kDbgOriginAttr))
+      op->setAttr(debug::kDbgOriginAttr, fromModule.getModuleNameAttr());
+  }
+
+  /// Record in the `dbg.origins` of the "toModule" the source-level info of
+  /// the "fromModule" and of the modules merged into it before. Nothing is
+  /// recorded if the "fromModule" carries no debug info.
+  void mergeDebugOrigins(FModuleLike toModule, FModuleLike fromModule) {
+    auto moduleInfo = fromModule->getAttr(debug::kDbgModuleInfoAttr);
+    auto fromOrigins =
+        fromModule->getAttrOfType<DictionaryAttr>(debug::kDbgOriginsAttr);
+    bool hasDebugOps = fromModule
+                           ->walk([](Operation *op) {
+                             return isNotDebugOp(*op) ? WalkResult::advance()
+                                                      : WalkResult::interrupt();
+                           })
+                           .wasInterrupted();
+    if (!moduleInfo && !fromOrigins && !hasDebugOps)
+      return;
+
+    NamedAttrList origins;
+    if (auto toOrigins =
+            toModule->getAttrOfType<DictionaryAttr>(debug::kDbgOriginsAttr))
+      origins.append(toOrigins.getValue());
+    if (fromOrigins)
+      for (auto origin : fromOrigins)
+        origins.set(origin.getName(), origin.getValue());
+
+    NamedAttrList origin;
+    if (moduleInfo)
+      origin.append("moduleinfo", moduleInfo);
+    origin.append("loc", LocationAttr(fromModule->getLoc()));
+    origins.set(fromModule.getModuleNameAttr(), origin.getDictionary(context));
+    toModule->setAttr(debug::kDbgOriginsAttr, origins.getDictionary(context));
   }
 
   MLIRContext *context;
