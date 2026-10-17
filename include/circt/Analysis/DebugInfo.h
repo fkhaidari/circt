@@ -36,6 +36,9 @@ struct DIModule {
   bool isExtern = false;
   /// If this is an inline scope created by a `dbg.scope` operation.
   bool isInline = false;
+  /// The `dbg.origins` of a module dedup merged others into: origin module
+  /// name -> `{moduleinfo, loc}`.
+  DictionaryAttr origins;
 };
 
 struct DIInstance {
@@ -54,6 +57,9 @@ struct DIVariable {
   LocationAttr loc;
   /// The SSA value representing the value of this variable.
   Value value = nullptr;
+  /// The module dedup moved this variable out of (`dbg.origin`); null if it
+  /// was declared in the module it sits in.
+  StringAttr origin;
 };
 
 /// Debug information attached to an operation and the operations nested within.

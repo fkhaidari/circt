@@ -45,6 +45,7 @@ using llvm::json::Object;
 namespace {
 
 static constexpr StringRef kFormatVersion = "1.0";
+static constexpr StringRef kFormatVersion2 = "2.0";
 
 /// `dbg.value` is a metadata wrapper (typeName / params) materialised by
 /// LowerIntrinsics. Unwrap before type interning and name resolution to
@@ -905,6 +906,11 @@ struct VarRecord {
   std::optional<unsigned> portIndex;
   /// Per-port bindings of an instance view.
   Object instanceTarget;
+  /// Module dedup moved the variable out of (`dbg.origin`); empty for one
+  /// declared where it sits.
+  StringRef origin;
+  /// Made up for a port no `dbg.variable` covers.
+  bool synthesized = false;
 
   bool dropped = false;
   std::string key;
@@ -935,6 +941,8 @@ struct ScopeRecord {
   SmallVector<unsigned> childScopes;
   /// Signals reachable as a leaf of some aggregate variable here.
   llvm::StringSet<> aggregateLeaves;
+  /// The module or `dbg.scope` op this record was made from.
+  Operation *op = nullptr;
 };
 
 //===----------------------------------------------------------------------===//
@@ -993,6 +1001,7 @@ private:
   Object buildVariableEntry(VarRecord &var);
 
   void renderScope(llvm::json::OStream &j, unsigned index);
+  void renderLayout2(llvm::json::OStream &j);
 };
 
 ScopeRecord &UhdiEmitter::addScope(StringRef id, StringRef kind) {
@@ -1139,6 +1148,8 @@ VarRecord UhdiEmitter::collectVariable(debug::VariableOp var, EmitState &s,
                                        ScopeRecord &scope) {
   VarRecord rec;
   rec.name = var.getName().str();
+  if (auto origin = var->getAttrOfType<StringAttr>(kDbgOriginAttr))
+    rec.origin = origin.getValue();
 
   // Root-level source-language metadata rides on a `dbg.value` wrapper of the
   // variable's operand; unwrap it once and use the wrapped value for all
@@ -1297,6 +1308,7 @@ void UhdiEmitter::synthesizePortVars(
     rec.typeRef = types.internType(modType.getPorts()[i].type, mod.getLoc());
     rec.direction = modType.isOutput(i) ? "output" : "input";
     rec.isPort = true;
+    rec.synthesized = true;
     rec.scalarSignal = portName.str();
     rec.target = llvm::json::Value(rec.scalarSignal);
     scope.vars.push_back(std::move(rec));
@@ -1398,6 +1410,7 @@ void UhdiEmitter::finalizeVariables() {
 void UhdiEmitter::collectModule(hw::HWModuleOp module, EmitState &s) {
   StringRef sym = module.getNameAttr().getValue();
   ScopeRecord &scope = addScope(sym, "module");
+  scope.op = module;
   if (auto typeName = moduleSourceTypeName(module))
     sourceExt(scope.source)["typeName"] = typeName.getValue().str();
   if (Array params = moduleSourceParams(module); !params.empty())
@@ -1436,6 +1449,7 @@ void UhdiEmitter::collectInlineScope(debug::ScopeOp scope, EmitState &s) {
   scopeOfOp[scope] = scopes.size();
   ScopeRecord &rec =
       addScope(("inline#" + Twine(scopes.size())).str(), "inline");
+  rec.op = scope;
   if (!scope.getInstanceName().empty())
     rec.source["name"] = scope.getInstanceName().str();
   if (auto typeName = moduleSourceTypeName(scope))
@@ -1460,6 +1474,7 @@ void UhdiEmitter::collect(mlir::ModuleOp top) {
       topLevelScopes.push_back(scopeIndex[mod.getNameAttr().getValue()]);
     } else if (auto ext = dyn_cast<hw::HWModuleExternOp>(op)) {
       ScopeRecord &scope = addScope(ext.getNameAttr().getValue(), "extmodule");
+      scope.op = ext;
       if (StringRef vn = verilogModuleName(ext); vn != scope.id)
         scope.target["name"] = vn.str();
       topLevelScopes.push_back(scopeIndex[ext.getNameAttr().getValue()]);
@@ -1559,6 +1574,464 @@ void UhdiEmitter::renderScope(llvm::json::OStream &j, unsigned index) {
   j.objectEnd();
 }
 
+//===----------------------------------------------------------------------===//
+// Layout 2: source / target / bindings
+//===----------------------------------------------------------------------===//
+
+/// `[file, line, column]` of a layout-1 location object, its file index moved
+/// by `fileOffset` into the single file list.
+static std::optional<Array> locTuple(const Object *loc,
+                                     int64_t fileOffset = 0) {
+  if (!loc)
+    return std::nullopt;
+  auto line = loc->getInteger("beginLine");
+  if (!line)
+    return std::nullopt;
+  return Array{*loc->getInteger("file") + fileOffset, *line,
+               loc->getInteger("beginColumn").value_or(0)};
+}
+
+/// `x-chisel` of a `dbg.moduleinfo` record: class name and constructor params.
+static Object moduleInfoExt(DictionaryAttr moduleInfo) {
+  Object ext;
+  if (!moduleInfo)
+    return ext;
+  if (auto typeName = moduleInfo.getAs<StringAttr>("typeName"))
+    ext["typeName"] = typeName.getValue().str();
+  if (Array params =
+          renderTypeSourceParams(moduleInfo.getAs<ArrayAttr>("params"));
+      !params.empty())
+    ext["params"] = std::move(params);
+  return ext;
+}
+
+/// The pool in layout 2: `fields` / `elem` / `base` / `values` and the source
+/// name next to the kind instead of under `source`.
+static Object layoutTypes(const Object &pool) {
+  Object out;
+  for (auto &[id, value] : pool) {
+    const Object &t = *value.getAsObject();
+    StringRef kind = t.getString("kind").value_or("");
+    const Object *src = t.getObject("source");
+    std::optional<StringRef> name;
+    if (src)
+      name = src->getString("name");
+    Object n{{"kind", kind}};
+    if (kind == "uint" && name == "Clock")
+      n = Object{{"kind", "clock"}};
+    else if (kind == "uint" || kind == "sint")
+      n["width"] = *t.get("width");
+    if (kind == "struct") {
+      Array fields;
+      for (auto &m : *t.getArray("members")) {
+        const Object &member = *m.getAsObject();
+        Object field{{"name", *member.get("name")},
+                     {"type", *member.get("typeRef")}};
+        if (member.getBoolean("flipped").value_or(false))
+          field["flip"] = true;
+        fields.push_back(std::move(field));
+      }
+      n["fields"] = std::move(fields);
+    }
+    if (kind == "vector") {
+      n["elem"] = *t.get("elementRef");
+      n["size"] = *t.get("size");
+    }
+    if (kind == "enum") {
+      n["base"] = *t.get("underlyingTypeRef");
+      Object values;
+      for (auto &[number, label] : *t.getObject("variants")) {
+        int64_t v;
+        if (StringRef(number).getAsInteger(10, v))
+          values[*label.getAsString()] = StringRef(number).str();
+        else
+          values[*label.getAsString()] = v;
+      }
+      n["values"] = std::move(values);
+    }
+    if (name)
+      n["name"] = *name;
+    if (src)
+      if (auto *ext = src->get("x-chisel"))
+        n["x-chisel"] = *ext;
+    out[id] = std::move(n);
+  }
+  return out;
+}
+
+static llvm::json::Value noValue() { return Object{{"$none", "optimized"}}; }
+
+/// A leaf binding of layout 1 (signal, `{signal, loc}` or literal) as a
+/// layout-2 value.
+static llvm::json::Value leafValue(const llvm::json::Value &binding) {
+  if (auto s = binding.getAsString())
+    return *s;
+  const Object &o = *binding.getAsObject();
+  if (auto s = o.getString("signal"))
+    return *s;
+  if (auto *c = o.get("constant"))
+    return Object{{"$const", *c}};
+  if (auto b = o.getString("bitVector"))
+    return Object{{"$const", ("0b" + *b).str()}};
+  return binding;
+}
+
+static bool isLeafBinding(const llvm::json::Value &binding) {
+  const Object *o = binding.getAsObject();
+  return !o || o->get("signal") || o->get("constant") || o->get("bitVector");
+}
+
+/// Rebuild the value of an aggregate from the dotted-path map of layout 1,
+/// shaped by its type: an object per struct, an array per vector, with a hole
+/// in a vector marked as having no value. Null when nothing below has a value.
+static std::optional<llvm::json::Value>
+aggregateValue(const Object &pool, StringRef typeId, const Object &paths,
+               const std::string &path) {
+  auto child = [&](const Twine &segment) {
+    return path.empty() ? segment.str() : (Twine(path) + "." + segment).str();
+  };
+  const Object *t = pool.getObject(typeId);
+  StringRef kind = t ? t->getString("kind").value_or("") : "";
+  if (kind == "struct") {
+    Object out;
+    for (auto &m : *t->getArray("members")) {
+      const Object &member = *m.getAsObject();
+      StringRef name = *member.getString("name");
+      if (auto v = aggregateValue(pool, *member.getString("typeRef"), paths,
+                                  child(name)))
+        out[name] = std::move(*v);
+    }
+    if (out.empty())
+      return std::nullopt;
+    return llvm::json::Value(std::move(out));
+  }
+  if (kind == "vector") {
+    Array out;
+    bool any = false;
+    for (int64_t i = 0, e = t->getInteger("size").value_or(0); i < e; ++i) {
+      auto v = aggregateValue(pool, *t->getString("elementRef"), paths,
+                              child(Twine(i)));
+      any |= v.has_value();
+      out.push_back(v ? std::move(*v) : noValue());
+    }
+    if (!any)
+      return std::nullopt;
+    return llvm::json::Value(std::move(out));
+  }
+  if (auto *leaf = paths.get(path))
+    return leafValue(*leaf);
+  return std::nullopt;
+}
+
+/// Port names LowerTypes makes out of the leaves of an aggregate of `typeId`.
+static void aggregateLeafNames(const Object &pool, StringRef typeId,
+                               const std::string &prefix,
+                               llvm::StringSet<> &out) {
+  const Object *t = pool.getObject(typeId);
+  StringRef kind = t ? t->getString("kind").value_or("") : "";
+  if (kind == "struct") {
+    for (auto &m : *t->getArray("members")) {
+      const Object &member = *m.getAsObject();
+      aggregateLeafNames(pool, *member.getString("typeRef"),
+                         prefix + member.getString("name")->str() + "_", out);
+    }
+  } else if (kind == "vector") {
+    for (int64_t i = 0, e = t->getInteger("size").value_or(0); i < e; ++i)
+      aggregateLeafNames(pool, *t->getString("elementRef"),
+                         prefix + std::to_string(i) + "_", out);
+  } else if (!prefix.empty()) {
+    out.insert(StringRef(prefix).drop_back());
+  }
+}
+
+/// One entry of `bindings`.
+struct BindingRecord {
+  BindingRecord(StringRef source, StringRef target, StringRef scope = {})
+      : source(source), target(target), scope(scope) {}
+  std::string source, target, scope;
+  std::optional<Array> at;
+  Object vars, hdlLocs;
+  /// Uses of each variable name, to tell two declarations of one name apart.
+  llvm::StringMap<unsigned> names;
+};
+
+/// Layout 2 splits what layout 1 nests under `modules`: `source` describes the
+/// modules as written, keyed by their name before dedup; `target` the Verilog
+/// modules and instances; `bindings` maps the variables of a source module to
+/// signals of a target module, at the dotted inline path `scope` when it was
+/// inlined. A target that dedup made out of several sources has a binding per
+/// source, and its instances do not claim to know which one they are.
+void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
+  EmitState s = state();
+  // Interning grows the source file list, so it has to settle before the
+  // target files are numbered after it.
+  for (auto &scope : scopes)
+    if (scope.kind == "module")
+      if (auto origins =
+              scope.op->getAttrOfType<DictionaryAttr>(kDbgOriginsAttr))
+        for (auto origin : origins)
+          if (auto info = dyn_cast<DictionaryAttr>(origin.getValue()))
+            if (auto loc = info.getAs<LocationAttr>("loc"))
+              (void)s.chiselLoc(loc);
+  int64_t offset = chiselFiles.ordered.size();
+
+  Object pool = types.takeObject();
+
+  llvm::StringMap<std::string> verilogNames;
+  for (unsigned index : topLevelScopes) {
+    ScopeRecord &scope = scopes[index];
+    auto name = scope.target.getString("name");
+    verilogNames[scope.id] = name ? name->str() : scope.id;
+  }
+
+  // Classes the instances of each module name.
+  llvm::StringMap<SmallVector<llvm::json::Value, 1>> instanceClasses;
+  for (unsigned index : topLevelScopes)
+    for (auto &inst : scopes[index].instances)
+      if (auto *ext = inst.source.getObject("x-chisel")) {
+        auto &classes = instanceClasses[inst.moduleRef];
+        llvm::json::Value cls = Object(*ext);
+        if (!llvm::is_contained(classes, cls))
+          classes.push_back(std::move(cls));
+      }
+
+  std::map<std::string, Object> sources;
+  auto sourceEntry = [&](StringRef name) -> Object & {
+    Object &entry = sources[name.str()];
+    if (!entry.get("vars"))
+      entry["vars"] = Object{};
+    return entry;
+  };
+
+  // Variables of `scope` into `binding` and the source module it binds.
+  auto addVar = [&](BindingRecord &binding, VarRecord &var,
+                    const llvm::StringSet<> &leaves) {
+    const Object &e = var.entry;
+    const Object *src = e.getObject("source");
+    // A port no `dbg.variable` covers that is only a leaf of an aggregate
+    // variable already shown.
+    if ((!src || src->empty()) && leaves.contains(var.name))
+      return;
+    // Keys are counted per source module, so a variable dedup moved here
+    // keeps its own name.
+    unsigned n = binding.names[var.name]++;
+    std::string key = n == 0 ? var.name : (var.name + "." + Twine(n)).str();
+    Object v{{"type", *e.get("typeRef")}};
+    if (src)
+      if (auto loc = locTuple(src->getObject("loc")))
+        v["loc"] = std::move(*loc);
+    if (auto dir = e.getString("direction"))
+      v["dir"] = *dir == "input" ? "in" : *dir == "output" ? "out" : "inout";
+    if (src)
+      if (auto *ext = src->getObject("x-chisel")) {
+        if (ext->getString("binding").value_or("").starts_with("Reg"))
+          v["kind"] = "reg";
+        v["x-chisel"] = Object(*ext);
+      }
+    sourceEntry(binding.source)
+        .getObject("vars")
+        ->try_emplace(key, std::move(v));
+
+    const Object *target = e.getObject("target");
+    const llvm::json::Value *verilog =
+        target ? target->get("verilog") : nullptr;
+    if (!verilog) {
+      binding.vars[key] = noValue();
+      return;
+    }
+    if (isLeafBinding(*verilog)) {
+      binding.vars[key] = leafValue(*verilog);
+      if (auto *o = verilog->getAsObject())
+        if (auto loc = locTuple(o->getObject("loc"), offset))
+          binding.hdlLocs[key] = std::move(*loc);
+      return;
+    }
+    auto value = aggregateValue(pool, *e.getString("typeRef"),
+                                *verilog->getAsObject(), "");
+    binding.vars[key] = value ? std::move(*value) : noValue();
+    if (auto loc = locTuple(target->getObject("loc"), offset))
+      binding.hdlLocs[key] = std::move(*loc);
+  };
+  auto leavesOf = [&](ScopeRecord &scope) {
+    llvm::StringSet<> leaves;
+    for (auto &var : scope.vars)
+      if (!var.dropped) {
+        StringRef typeId = *var.entry.getString("typeRef");
+        if (auto *t = pool.getObject(typeId);
+            t && llvm::is_contained({"struct", "vector"},
+                                    t->getString("kind").value_or("")))
+          aggregateLeafNames(pool, typeId, var.name + "_", leaves);
+      }
+    return leaves;
+  };
+
+  std::vector<BindingRecord> bindings;
+  llvm::StringMap<unsigned> unscopedBindings;
+  Object targets;
+
+  // An inline scope binds the module it inlined, at its path in `target`.
+  std::function<void(unsigned, StringRef, const std::string &)> addInline =
+      [&](unsigned index, StringRef target, const std::string &parentPath) {
+        ScopeRecord &scope = scopes[index];
+        auto op = cast<debug::ScopeOp>(scope.op);
+        std::string path =
+            parentPath.empty()
+                ? op.getInstanceName().str()
+                : (parentPath + "." + op.getInstanceName()).str();
+        BindingRecord binding(op.getModuleName(), target, path);
+        binding.at = locTuple(scope.source.getObject("loc"));
+        Object &entry = sourceEntry(binding.source);
+        if (auto *ext = scope.source.getObject("x-chisel");
+            ext && !entry.get("x-chisel"))
+          entry["x-chisel"] = Object(*ext);
+        llvm::StringSet<> leaves = leavesOf(scope);
+        for (auto &var : scope.vars)
+          if (!var.dropped)
+            addVar(binding, var, leaves);
+        bindings.push_back(std::move(binding));
+        for (unsigned child : scope.childScopes)
+          addInline(child, target, path);
+      };
+
+  for (unsigned index : topLevelScopes) {
+    ScopeRecord &scope = scopes[index];
+    StringRef target = verilogNames[scope.id];
+    Object module;
+    if (auto *loc = scope.target.getObject("loc"))
+      module["file"] = *loc->getInteger("file") + offset;
+    if (scope.kind == "extmodule") {
+      module["kind"] = "extern";
+      targets[target] = std::move(module);
+      continue;
+    }
+
+    // The module's own source first, then each one dedup merged into it.
+    auto origins = scope.op->getAttrOfType<DictionaryAttr>(kDbgOriginsAttr);
+    SmallVector<BindingRecord, 1> own;
+    own.emplace_back(scope.id, target);
+    auto bindingOf = [&](StringRef source) -> BindingRecord & {
+      for (auto &binding : own)
+        if (binding.source == source)
+          return binding;
+      own.emplace_back(source, target);
+      return own.back();
+    };
+
+    Object &ownEntry = sourceEntry(scope.id);
+    if (auto loc = locTuple(scope.source.getObject("loc")))
+      ownEntry["loc"] = std::move(*loc);
+    SmallVector<llvm::json::Value> originClasses;
+    if (origins)
+      for (auto origin : origins) {
+        bindingOf(origin.getName().getValue());
+        Object &entry = sourceEntry(origin.getName().getValue());
+        auto info = dyn_cast<DictionaryAttr>(origin.getValue());
+        if (!info)
+          continue;
+        if (auto locAttr = info.getAs<LocationAttr>("loc"))
+          if (auto loc = s.chiselLoc(locAttr))
+            if (auto at = locTuple(&*loc))
+              entry["loc"] = std::move(*at);
+        if (Object ext =
+                moduleInfoExt(info.getAs<DictionaryAttr>("moduleinfo"));
+            !ext.empty()) {
+          originClasses.push_back(Object(ext));
+          entry["x-chisel"] = std::move(ext);
+        }
+      }
+    // PropagateDebugClassInfo leaves the class on the instances. Those of a
+    // deduplicated module name every source merged into it; the one no
+    // origin claims is the module's own.
+    if (auto *ext = scope.source.getObject("x-chisel")) {
+      ownEntry["x-chisel"] = Object(*ext);
+    } else {
+      auto &classes = instanceClasses[scope.id];
+      SmallVector<llvm::json::Value, 1> unclaimed;
+      for (auto &cls : classes)
+        if (!llvm::is_contained(originClasses, cls))
+          unclaimed.push_back(cls);
+      if (unclaimed.size() == 1)
+        ownEntry["x-chisel"] = unclaimed.front();
+      else if (classes.size() == 1)
+        ownEntry["x-chisel"] = classes.front();
+    }
+
+    llvm::StringSet<> leaves = leavesOf(scope);
+    for (auto &var : scope.vars) {
+      if (var.dropped)
+        continue;
+      // A port without a `dbg.variable` belongs to every source alike.
+      if (var.synthesized) {
+        for (unsigned i = 0, e = own.size(); i != e; ++i)
+          addVar(own[i], var, leaves);
+        continue;
+      }
+      addVar(bindingOf(var.origin.empty() ? StringRef(scope.id) : var.origin),
+             var, leaves);
+    }
+    unscopedBindings[scope.id] = own.size();
+    for (auto &binding : own)
+      bindings.push_back(std::move(binding));
+    for (unsigned child : scope.childScopes)
+      addInline(child, target, "");
+    targets[target] = std::move(module);
+  }
+
+  // Instances last: whether one can name its source depends on the bindings
+  // of the module it instantiates.
+  for (unsigned index : topLevelScopes) {
+    ScopeRecord &scope = scopes[index];
+    if (scope.instances.empty())
+      continue;
+    Object insts;
+    for (auto &inst : scope.instances) {
+      Object entry{{"module", verilogNames.lookup(inst.moduleRef)}};
+      if (unscopedBindings.lookup(inst.moduleRef) == 1)
+        entry["source"] = inst.moduleRef;
+      auto name = inst.target.getString("name");
+      if (name)
+        entry["name"] = inst.as;
+      if (auto at = locTuple(inst.source.getObject("loc")))
+        entry["at"] = std::move(*at);
+      insts[name ? name->str() : inst.as] = std::move(entry);
+    }
+    (*targets.getObject(verilogNames[scope.id]))["inst"] = std::move(insts);
+  }
+
+  Array files;
+  for (auto &path : chiselFiles.ordered)
+    files.push_back(Object{{"path", path}});
+  for (auto &path : verilogFiles.ordered)
+    files.push_back(Object{{"path", path}, {"target", true}});
+
+  j.object([&] {
+    j.attribute("uhdi", kFormatVersion2);
+    j.attribute("producer", "firtool");
+    j.attribute("profiles", Array{"x-chisel"});
+    j.attribute("files", std::move(files));
+    j.attribute("types", layoutTypes(pool));
+    j.attributeObject("source", [&] {
+      for (auto &[name, entry] : sources)
+        j.attribute(name, std::move(entry));
+    });
+    j.attribute("target", std::move(targets));
+    j.attributeArray("bindings", [&] {
+      for (auto &binding : bindings) {
+        Object entry{{"source", binding.source},
+                     {"target", binding.target},
+                     {"vars", std::move(binding.vars)}};
+        if (!binding.scope.empty())
+          entry["scope"] = binding.scope;
+        if (binding.at)
+          entry["at"] = std::move(*binding.at);
+        if (!binding.hdlLocs.empty())
+          entry["hdl_locs"] = std::move(binding.hdlLocs);
+        j.value(std::move(entry));
+      }
+    });
+  });
+}
+
 LogicalResult UhdiEmitter::run(raw_ostream &os) {
   auto top = dyn_cast<mlir::ModuleOp>(root);
   if (!top)
@@ -1566,6 +2039,11 @@ LogicalResult UhdiEmitter::run(raw_ostream &os) {
   collect(top);
 
   llvm::json::OStream j(os, /*IndentSize=*/2);
+  if (options.format == 2) {
+    renderLayout2(j);
+    os << "\n";
+    return success();
+  }
   j.object([&] {
     j.attribute("format", Object{{"version", kFormatVersion.str()}});
     j.attribute("source", Object{{"language", "Chisel"},
@@ -1591,5 +2069,8 @@ LogicalResult UhdiEmitter::run(raw_ostream &os) {
 
 LogicalResult debug::emitUHDI(Operation *module, raw_ostream &os,
                               const EmitUHDIOptions &options) {
+  if (options.format != 1 && options.format != 2)
+    return mlir::emitError(module->getLoc(), "unsupported UHDI format ")
+           << options.format;
   return UhdiEmitter(module, options).run(os);
 }

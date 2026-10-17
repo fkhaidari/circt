@@ -274,6 +274,12 @@ static cl::opt<bool> uhdiOnlyExistingFileLocs(
     cl::desc("Only consider locations in files that exist on disk (UHDI)"),
     cl::init(false), cl::cat(mainCategory));
 
+static cl::opt<unsigned>
+    uhdiFormat("uhdi-format",
+               cl::desc("UHDI document layout: 1 (modules) or 2 "
+                        "(source/target/bindings)"),
+               cl::init(1), cl::value_desc("version"), cl::cat(mainCategory));
+
 static cl::opt<std::string>
     uhdiOutputFile("uhdi-output-file",
                    cl::desc("Required output path for UHDI JSON "
@@ -387,6 +393,7 @@ static debug::EmitUHDIOptions getUHDIOptions(StringRef verilogFileName = "") {
   opts.outputFilePrefix = uhdiOutputPrefix;
   opts.verilogFileName = verilogFileName;
   opts.onlyExistingFileLocs = uhdiOnlyExistingFileLocs;
+  opts.format = uhdiFormat;
   return opts;
 }
 
@@ -464,6 +471,10 @@ static LogicalResult processBuffer(
       outputFormat != OutputSplitVerilog) {
     llvm::errs()
         << "error: --emit-uhdi requires --verilog or --split-verilog\n";
+    return failure();
+  }
+  if (uhdiFormat != 1 && uhdiFormat != 2) {
+    llvm::errs() << "error: --uhdi-format must be 1 or 2\n";
     return failure();
   }
 

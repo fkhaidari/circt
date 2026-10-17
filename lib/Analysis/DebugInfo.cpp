@@ -57,6 +57,8 @@ void DebugInfoBuilder::visitRoot(Operation *op) {
                  << "Collect DI for module " << moduleOp.getNameAttr() << "\n");
       auto &module = getOrCreateModule(moduleOp.getNameAttr());
       module.op = op;
+      module.origins =
+          moduleOp->getAttrOfType<DictionaryAttr>(debug::kDbgOriginsAttr);
       visitModule(moduleOp, module);
       return WalkResult::skip();
     }
@@ -139,6 +141,7 @@ void DebugInfoBuilder::visitModule(hw::HWModuleOp moduleOp, DIModule &module) {
       var->name = varOp.getNameAttr();
       var->loc = varOp.getLoc();
       var->value = varOp.getValue();
+      var->origin = varOp->getAttrOfType<StringAttr>(debug::kDbgOriginAttr);
       getScope(varOp.getScope()).variables.push_back(var);
       return;
     }

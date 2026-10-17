@@ -93,12 +93,18 @@ void registerUHDITranslation() {
       "uhdi-only-existing-file-locs",
       llvm::cl::desc("Only consider locations in files that exist on disk"),
       llvm::cl::init(false));
+  static llvm::cl::opt<unsigned> format(
+      "uhdi-format",
+      llvm::cl::desc("UHDI document layout: 1 (modules) or 2 "
+                     "(source/target/bindings)"),
+      llvm::cl::init(1));
 
   auto getOptions = [] {
     EmitUHDIOptions opts;
     opts.sourceFilePrefix = sourcePrefix;
     opts.outputFilePrefix = outputPrefix;
     opts.onlyExistingFileLocs = onlyExistingFileLocs;
+    opts.format = format;
     return opts;
   };
 
