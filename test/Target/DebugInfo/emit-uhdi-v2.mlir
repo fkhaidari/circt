@@ -197,7 +197,7 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:       "a": "a",
 // CHECK-NEXT:       "b": "b",
 // CHECK-NEXT:       "k": {
-// CHECK-NEXT:         "$const": 5
+// CHECK-NEXT:         "$const": "0b00000101"
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "op": "op",
 // CHECK-NEXT:       "wide": {

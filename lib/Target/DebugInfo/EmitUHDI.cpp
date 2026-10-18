@@ -1839,16 +1839,30 @@ static Object layoutTypes(const Object &pool) {
 
 static llvm::json::Value noValue() { return Object{{"$none", "optimized"}}; }
 
+/// Bit width of a leaf of pool type `typeId`; an enum has its base's.
+static unsigned leafWidth(const Object &pool, StringRef typeId) {
+  const Object *t = pool.getObject(typeId);
+  if (!t)
+    return 0;
+  if (auto base = t->getString("underlyingTypeRef"))
+    return leafWidth(pool, *base);
+  return t->getInteger("width").value_or(0);
+}
+
 /// A leaf binding of layout 1 (signal, `{signal, loc}` or literal) as a
-/// layout-2 value.
-static llvm::json::Value leafValue(const llvm::json::Value &binding) {
+/// layout-2 value. A literal is always a bit string, `width` bits long.
+static llvm::json::Value leafValue(const llvm::json::Value &binding,
+                                   unsigned width = 0) {
   if (auto s = binding.getAsString())
     return *s;
   const Object &o = *binding.getAsObject();
   if (auto s = o.getString("signal"))
     return *s;
-  if (auto *c = o.get("constant"))
-    return Object{{"$const", *c}};
+  if (auto c = o.getInteger("constant")) {
+    llvm::APInt value(64, *c);
+    return leafValue(
+        renderBits(value.zextOrTrunc(std::max(width, value.getActiveBits()))));
+  }
   if (auto b = o.getString("bitVector"))
     return Object{{"$const", ("0b" + *b).str()}};
   if (auto op = o.getString("$op")) {
@@ -1914,7 +1928,7 @@ aggregateValue(const Object &pool, StringRef typeId, const Object &paths,
     return llvm::json::Value(std::move(out));
   }
   if (auto *leaf = paths.get(path))
-    return leafValue(*leaf);
+    return leafValue(*leaf, leafWidth(pool, typeId));
   return std::nullopt;
 }
 
@@ -2032,7 +2046,8 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
       return;
     }
     if (isLeafBinding(*verilog)) {
-      binding.vars[key] = leafValue(*verilog);
+      binding.vars[key] =
+          leafValue(*verilog, leafWidth(pool, *e.getString("typeRef")));
       if (auto *o = verilog->getAsObject())
         if (auto loc = locTuple(o->getObject("loc"), offset))
           binding.hdlLocs[key] = std::move(*loc);
