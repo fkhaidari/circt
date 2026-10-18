@@ -387,7 +387,7 @@ public:
   /// fallback. A `dbg.enum` wrapper overrides the scalar typeRef with the enum
   /// type-pool entry.
   std::string internValueType(mlir::Value value, StringRef nameHint = {},
-                              SourceType src = {}) {
+                              SourceType src = {}, StringRef ground = {}) {
     value = unwrapDbgValue(value);
     if (auto opResult = dyn_cast<OpResult>(value)) {
       // A `dbg.enum` wrapper overrides the underlying integer typeRef with the
@@ -399,7 +399,31 @@ public:
       if (auto a = dyn_cast_or_null<debug::ArrayOp>(opResult.getOwner()))
         return internArray(a, nameHint, src);
     }
-    return internType(value.getType(), value.getLoc(), src);
+    return internType(value.getType(), value.getLoc(), src, ground);
+  }
+
+  /// Whether `groundOf` reads `dbg.ground`. Layout 1 keeps the integer types.
+  bool groundKinds = false;
+
+  /// The `dbg.ground` kind of operand `index` of `user`, read from the op
+  /// that takes the leaf itself, past any `dbg.value` wrapper.
+  StringRef groundOf(Operation *user, unsigned index) const {
+    if (!groundKinds)
+      return {};
+    mlir::Value value = user->getOperand(index);
+    while (auto wrapper = value.getDefiningOp<debug::ValueOp>()) {
+      user = wrapper;
+      index = 0;
+      value = wrapper.getValue();
+    }
+    Attribute attr = user->getAttr(debug::kDbgGroundAttr);
+    if (auto kind = dyn_cast_or_null<StringAttr>(attr))
+      return kind.getValue();
+    if (auto kinds = dyn_cast_or_null<ArrayAttr>(attr))
+      if (index < kinds.size())
+        if (auto kind = dyn_cast<StringAttr>(kinds[index]))
+          return kind.getValue();
+    return {};
   }
 
   /// Intern an IR Type directly (synthesized-port fallback). Preserves
@@ -409,9 +433,13 @@ public:
   /// `uint<0>` but surface a warning at `warnLoc` so the corruption is
   /// at least audible.
   std::string internType(mlir::Type type, mlir::Location warnLoc,
-                         SourceType src = {}) {
-    if (auto i = dyn_cast<IntegerType>(type))
-      return internGround(i.isSigned() ? "sint" : "uint", i.getWidth(), src);
+                         SourceType src = {}, StringRef ground = {}) {
+    if (auto i = dyn_cast<IntegerType>(type)) {
+      if (ground == "clock" && i.getWidth() == 1)
+        return internGround("clock", 0, src);
+      return internGround(i.isSigned() || ground == "sint" ? "sint" : "uint",
+                          i.getWidth(), src);
+    }
     if (isa<seq::ClockType>(type))
       return internGround("clock", 0, src);
     if (auto arr = dyn_cast<hw::ArrayType>(type))
@@ -664,9 +692,9 @@ private:
 
   std::string internGround(StringRef kind, unsigned width, SourceType src,
                            bool unnamed = false) {
-    std::string id = (kind == "uint" && width == 1)
-                         ? std::string("bool")
-                         : (kind + std::to_string(width)).str();
+    std::string id = (kind == "uint" && width == 1) ? std::string("bool")
+                     : kind == "clock"              ? std::string("clock")
+                                       : (kind + std::to_string(width)).str();
     return intern(
         id, id, src,
         [&] {
@@ -755,7 +783,8 @@ private:
       // an enum leaf is additionally wrapped in dbg.enum. Pass the wrapped
       // value to internValueType so the enum/struct typeRef is preserved,
       // not the raw integer.
-      std::string ft = internValueType(field, childHint, sourceTypeOf(field));
+      std::string ft = internValueType(field, childHint, sourceTypeOf(field),
+                                       groundOf(op, index));
       bool flipped = flips && flips[index];
       key.append(n).append(1, ':').append(ft);
       if (flipped)
@@ -776,10 +805,11 @@ private:
   std::string internArray(debug::ArrayOp op, StringRef nameHint,
                           SourceType src) {
     auto elems = op.getElements();
-    std::string elemId = elems.empty()
-                             ? internGround("uint", 0, {})
-                             : internValueType(elems.front(), nameHint,
-                                               sourceTypeOf(elems.front()));
+    std::string elemId =
+        elems.empty()
+            ? internGround("uint", 0, {})
+            : internValueType(elems.front(), nameHint,
+                              sourceTypeOf(elems.front()), groundOf(op, 0));
     std::string key =
         "array{" + elemId + ':' + std::to_string(elems.size()) + '}';
     return intern(key, aggregateId(nameHint, "array_", arrayCounter), src, [&] {
@@ -972,7 +1002,9 @@ struct ScopeRecord {
 class UhdiEmitter {
 public:
   UhdiEmitter(Operation *root, const EmitUHDIOptions &options)
-      : root(root), options(options) {}
+      : root(root), options(options) {
+    types.groundKinds = options.format == 2;
+  }
   LogicalResult run(raw_ostream &os);
 
 private:
@@ -1348,7 +1380,8 @@ VarRecord UhdiEmitter::collectVariable(debug::VariableOp var, EmitState &s,
       instanceNames(var->getParentOfType<hw::HWModuleOp>())
           .contains(var.getName());
   if (!rec.isInstanceView)
-    rec.typeRef = types.internValueType(rootVal, structHint, src);
+    rec.typeRef =
+        types.internValueType(rootVal, structHint, src, types.groundOf(var, 0));
 
   // A port is the variable named after it. Where the value sits is not
   // enough: `node alias = a` shares the input's block argument at -O=release

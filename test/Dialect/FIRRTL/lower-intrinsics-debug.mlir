@@ -557,12 +557,13 @@ firrtl.circuit "MixedPathSubfieldTest" {
 
 // sint<8> operand: the signedness path must lower to dbg.variable just like
 // uint<8>. (FIRRTLBaseType::isGround() returns true for sint, so the scalar
-// branch in DebugAggregateBuilder fires.)
+// branch in DebugAggregateBuilder fires.) Lowering makes the integer
+// signless, so the op taking the leaf records that it is signed.
 
 // CHECK-LABEL: firrtl.module @SIntVar
 firrtl.circuit "SIntVar" {
   firrtl.module @SIntVar(in %s: !firrtl.sint<8>) {
-    // CHECK: %[[V:.+]] = dbg.value %s typeName "SInt" : !firrtl.sint<8>
+    // CHECK: %[[V:.+]] = dbg.value %s typeName "SInt" {dbg.ground = "sint"} : !firrtl.sint<8>
     // CHECK: dbg.variable "s", %[[V]] {dbg.port = "in"} : !dbg.value
     firrtl.int.generic "circt_debug_var"
       <name: none = "s", typeName: none = "SInt">

@@ -366,6 +366,9 @@ Value convertToDebugAggregates(
     OpBuilder &builder, Value value,
     llvm::function_ref<bool(uint64_t fieldID)> keepLeaf = nullptr);
 
+/// The `dbg.ground` kind of a FIRRTL type: `"sint"` or `"clock"`, else empty.
+StringRef getDebugGroundKind(Type type);
+
 //===----------------------------------------------------------------------===//
 // Object related utilities
 //===----------------------------------------------------------------------===//

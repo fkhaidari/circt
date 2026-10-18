@@ -1065,19 +1065,23 @@ private:
   }
 
   Value wrap(Value inner, StringRef parentPath) {
+    debug::ValueOp result;
     auto it = leafMetaMap.find(parentPath);
-    if (it == leafMetaMap.end())
-      return debug::ValueOp::create(rewriter, loc, inner, {}, {}).getResult();
-
-    const LeafMeta &meta = it->second;
-    if (meta.enumVariantsMap)
-      inner = debug::EnumOp::create(rewriter, loc, inner, meta.enumTypeName,
-                                    meta.enumVariantsMap, meta.enumFqn)
-                  .getResult();
-
-    return debug::ValueOp::create(rewriter, loc, inner, meta.typeName,
-                                  meta.params)
-        .getResult();
+    if (it == leafMetaMap.end()) {
+      result = debug::ValueOp::create(rewriter, loc, inner, {}, {});
+    } else {
+      const LeafMeta &meta = it->second;
+      if (meta.enumVariantsMap)
+        inner = debug::EnumOp::create(rewriter, loc, inner, meta.enumTypeName,
+                                      meta.enumVariantsMap, meta.enumFqn)
+                    .getResult();
+      result = debug::ValueOp::create(rewriter, loc, inner, meta.typeName,
+                                      meta.params);
+    }
+    auto ground = getDebugGroundKind(inner.getType());
+    if (!ground.empty())
+      result->setAttr(debug::kDbgGroundAttr, rewriter.getStringAttr(ground));
+    return result.getResult();
   }
 
   void eraseUnused(ArrayRef<Operation *> ops) {
@@ -1227,13 +1231,21 @@ public:
 
     // Root type metadata goes on a `dbg.value` wrapper, so `dbg.variable`
     // itself stays metadata-free.
-    if (typeName || params)
-      dbgValue =
-          debug::ValueOp::create(rewriter, location, dbgValue, typeName, params)
-              .getResult();
+    Operation *leafUser = nullptr;
+    if (typeName || params) {
+      auto wrapper = debug::ValueOp::create(rewriter, location, dbgValue,
+                                            typeName, params);
+      leafUser = wrapper;
+      dbgValue = wrapper.getResult();
+    }
 
     auto var = rewriter.replaceOpWithNewOp<debug::VariableOp>(
         gi.op, varName, dbgValue, /*scope=*/Value{});
+    // A ground root is its own leaf, taken by the wrapper if there is one.
+    auto ground = getDebugGroundKind(rawSignal.getType());
+    if (!ground.empty())
+      (leafUser ? leafUser : var.getOperation())
+          ->setAttr(debug::kDbgGroundAttr, rewriter.getStringAttr(ground));
     if (auto arg = dyn_cast<BlockArgument>(rawSignal))
       if (auto mod = dyn_cast<FModuleLike>(arg.getOwner()->getParentOp()))
         var->setAttr(debug::kDbgPortAttr,

@@ -184,4 +184,7 @@ void MaterializeDebugInfoPass::materializeVariable(
   if (port)
     var->setAttr(debug::kDbgPortAttr,
                  builder.getStringAttr(direction::toString(*port)));
+  auto ground = getDebugGroundKind(dbgValue.getType());
+  if (!ground.empty())
+    var->setAttr(debug::kDbgGroundAttr, builder.getStringAttr(ground));
 }

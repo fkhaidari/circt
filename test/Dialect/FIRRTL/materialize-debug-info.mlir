@@ -15,7 +15,7 @@ firrtl.module @Ports(
 
   // CHECK-NEXT: [[TMP0:%.+]] = firrtl.subfield %inB[a]
   // CHECK-NEXT: [[TMP1:%.+]] = firrtl.subfield %inB[b]
-  // CHECK-NEXT: [[TMP:%.+]] = dbg.struct {"a": [[TMP0]], "b": [[TMP1]]}
+  // CHECK-NEXT: [[TMP:%.+]] = dbg.struct {"a": [[TMP0]], "b": [[TMP1]]} {dbg.ground = ["sint", "clock"]}
   // CHECK-NEXT: dbg.variable "inB", [[TMP]]
 
   // CHECK-NEXT: [[TMP0:%.+]] = firrtl.subindex %inC[0]
@@ -28,8 +28,8 @@ firrtl.module @Ports(
   // CHECK-NEXT: [[TMP3:%.+]] = firrtl.subindex [[TMP1]][1]
   // CHECK-NEXT: [[TMP4:%.+]] = firrtl.subindex [[TMP1]][2]
   // CHECK-NEXT: [[TMP5:%.+]] = firrtl.subindex [[TMP1]][3]
-  // CHECK-NEXT: [[TMP6:%.+]] = dbg.array [[[TMP2]], [[TMP3]], [[TMP4]], [[TMP5]]]
-  // CHECK-NEXT: [[TMP7:%.+]] = dbg.struct {"clocks": [[TMP6]]}
+  // CHECK-NEXT: [[TMP6:%.+]] = dbg.array [[[TMP2]], [[TMP3]], [[TMP4]], [[TMP5]]] {dbg.ground = "clock"}
+  // CHECK-NEXT: [[TMP7:%.+]] = dbg.struct {"clocks": [[TMP6]]} :
   // CHECK-NEXT: dbg.variable "inD", [[TMP7]]
 
   // CHECK-NEXT: dbg.variable "outA", %outA

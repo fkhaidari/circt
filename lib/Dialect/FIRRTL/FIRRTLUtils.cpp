@@ -1131,6 +1131,7 @@ convertToDebugAggregates(OpBuilder &builder, Value value, uint64_t fieldID,
         SmallVector<Value> fields;
         SmallVector<Attribute> names;
         SmallVector<bool> flips;
+        SmallVector<Attribute> grounds;
         SmallVector<Operation *> subOps;
         for (auto [index, element] : llvm::enumerate(type.getElements())) {
           auto subOp =
@@ -1141,6 +1142,8 @@ convertToDebugAggregates(OpBuilder &builder, Value value, uint64_t fieldID,
             fields.push_back(dbgValue);
             names.push_back(element.name);
             flips.push_back(element.isFlip);
+            grounds.push_back(
+                builder.getStringAttr(getDebugGroundKind(dbgValue.getType())));
           }
         }
         auto result = debug::StructOp::create(builder, value.getLoc(), fields,
@@ -1148,6 +1151,10 @@ convertToDebugAggregates(OpBuilder &builder, Value value, uint64_t fieldID,
         if (llvm::is_contained(flips, true))
           result->setAttr(debug::kDbgFlipsAttr,
                           builder.getDenseBoolArrayAttr(flips));
+        if (llvm::any_of(grounds, [](Attribute attr) {
+              return !cast<StringAttr>(attr).empty();
+            }))
+          result->setAttr(debug::kDbgGroundAttr, builder.getArrayAttr(grounds));
         for (auto *subOp : subOps)
           if (subOp->use_empty())
             subOp->erase();
@@ -1165,8 +1172,13 @@ convertToDebugAggregates(OpBuilder &builder, Value value, uint64_t fieldID,
             elements.push_back(dbgValue);
         }
         Value result;
-        if (!elements.empty() && elements.size() == type.getNumElements())
+        if (!elements.empty() && elements.size() == type.getNumElements()) {
           result = debug::ArrayOp::create(builder, value.getLoc(), elements);
+          auto ground = getDebugGroundKind(elements.front().getType());
+          if (!ground.empty())
+            result.getDefiningOp()->setAttr(debug::kDbgGroundAttr,
+                                            builder.getStringAttr(ground));
+        }
         for (auto *subOp : subOps)
           if (subOp->use_empty())
             subOp->erase();
@@ -1184,6 +1196,14 @@ Value circt::firrtl::convertToDebugAggregates(
     OpBuilder &builder, Value value,
     llvm::function_ref<bool(uint64_t fieldID)> keepLeaf) {
   return ::convertToDebugAggregates(builder, value, 0, keepLeaf);
+}
+
+StringRef circt::firrtl::getDebugGroundKind(Type type) {
+  if (type_isa<SIntType>(type))
+    return "sint";
+  if (type_isa<ClockType>(type))
+    return "clock";
+  return {};
 }
 
 PathOp circt::firrtl::createPathRef(Operation *op, hw::HierPathOp nla,

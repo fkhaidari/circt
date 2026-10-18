@@ -45,6 +45,12 @@ inline constexpr llvm::StringLiteral kDbgFlipsAttr = "dbg.flips";
 /// lowering and inlining later turn ports into plain signals.
 inline constexpr llvm::StringLiteral kDbgPortAttr = "dbg.port";
 
+/// FIRRTL ground kind of a leaf operand that lowering turns into a plain
+/// integer: `"sint"` or `"clock"`. On the debug op that takes the leaf: a
+/// string covers every operand, an array has one string per operand (empty
+/// for the rest). Absent when no operand is signed or a clock.
+inline constexpr llvm::StringLiteral kDbgGroundAttr = "dbg.ground";
+
 /// Name of the module a root debug op (`dbg.variable`, or a `dbg.scope`
 /// without a parent scope) came from, when dedup moved it out of that module
 /// into the module that replaced it. Absent means the enclosing module. On an
