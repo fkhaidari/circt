@@ -21,7 +21,7 @@ hw.module @Child(in %a : i8, in %op : i2, out b : i8) {
   %vec = dbg.array [%a, %0] : i8
   %io = dbg.struct {"a": %a, "op": %op_v, "v": %vec} : i8, !dbg.value, !dbg.array<i8>
   %io_v = dbg.value %io typeName "IO[Bundle]" : !dbg.struct<i8, !dbg.value, !dbg.array<i8>>
-  dbg.variable "io", %io_v : !dbg.value loc(#locIo)
+  dbg.variable "io", %io_v {dbg.port = "in"} : !dbg.value loc(#locIo)
   %r = dbg.value %a typeName "Reg[UInt<8>]" : i8
   dbg.variable "r", %r : !dbg.value loc(#locReg)
   dbg.variable "lost", %0 : i8 loc(#locLost)
@@ -36,7 +36,7 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
   %c.b = hw.instance "c" @Child(a: %a: i8, op: %op: i2) -> (b: i8) {dbg.moduleinfo = {params = [{name = "w", typeName = "Int", value = "8"}], typeName = "ChildClass"}, hw.verilogName = "c_0"} loc(#locInst)
   hw.instance "e" @Ext(a: %a: i8) -> ()
   hw.output %c.b : i8
-} loc(#locTop)
+} loc(fused[#locTop, fused<"verilogLocations">["out.sv":12:1]])
 
 // CHECK:      "uhdi": "2.0",
 // CHECK-NEXT: "producer": "firtool",
@@ -107,6 +107,7 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:         "type": "uint8"
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "io": {
+// CHECK-NEXT:         "dir": "in",
 // CHECK:              "type": "Child_io",
 // CHECK-NEXT:         "x-chisel": {
 // CHECK-NEXT:           "binding": "IO"
@@ -140,6 +141,7 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:     "kind": "extern"
 // CHECK-NEXT:   },
 // CHECK-NEXT:   "Top": {
+// CHECK-NEXT:     "file": [[SV]],
 // CHECK-NEXT:     "inst": {
 // CHECK-NEXT:       "c_0": {
 // CHECK-NEXT:         "at": [

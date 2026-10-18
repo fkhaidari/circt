@@ -2097,8 +2097,18 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
       continue;
     }
 
-    // The module's own source first, then each one dedup merged into it.
+    // A module the frontend said nothing about, such as a memory lowering
+    // made, has no source and lives in the target only.
     auto origins = scope.op->getAttrOfType<DictionaryAttr>(kDbgOriginsAttr);
+    if (!origins && !scope.source.getObject("x-chisel") &&
+        !instanceClasses.contains(scope.id) && scope.childScopes.empty() &&
+        llvm::all_of(scope.vars,
+                     [](const VarRecord &var) { return var.synthesized; })) {
+      targets[target] = std::move(module);
+      continue;
+    }
+
+    // The module's own source first, then each one dedup merged into it.
     SmallVector<BindingRecord, 1> own;
     own.emplace_back(scope.id, target);
     auto bindingOf = [&](StringRef source) -> BindingRecord & {

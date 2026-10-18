@@ -1,0 +1,53 @@
+; RUN: firtool -g --emit-uhdi --uhdi-format=2 --uhdi-output-file=%t.json %s -o %t.sv
+; RUN: FileCheck %s --input-file=%t.json
+
+; Lowering turns the memory into a module of its own. The frontend never
+; declared it, so it lives in the target only: no source module, no binding,
+; and the instance names no source.
+
+FIRRTL version 4.0.0
+circuit M :
+  public module M :
+    input clock : Clock
+    input addr : UInt<2>
+    input wdata : UInt<8>
+    output data : UInt<8>
+    mem m :
+      data-type => UInt<8>
+      depth => 4
+      read-latency => 1
+      write-latency => 1
+      reader => r
+      writer => w
+      read-under-write => undefined
+    connect m.r.addr, addr
+    connect m.r.en, UInt<1>(1)
+    connect m.r.clk, clock
+    connect m.w.addr, addr
+    connect m.w.en, UInt<1>(1)
+    connect m.w.clk, clock
+    connect m.w.data, wdata
+    connect m.w.mask, UInt<1>(1)
+    connect data, m.r.data
+
+; CHECK:      "source": {
+; CHECK-NEXT:   "M": {
+; CHECK-NOT:    "m_
+; CHECK:      "target": {
+; CHECK-NEXT:   "M": {
+; CHECK-NEXT:     "file": 0,
+; CHECK-NEXT:     "inst": {
+; CHECK-NEXT:       "m_ext": {
+; CHECK-NEXT:         "module": "[[MEM:m_[0-9x]+]]"
+; CHECK-NEXT:       }
+; CHECK-NEXT:     }
+; CHECK-NEXT:   },
+; CHECK-NEXT:   "[[MEM]]": {
+; CHECK-NEXT:     "file": 0
+; CHECK-NEXT:   }
+; CHECK-NEXT: },
+; CHECK:      "bindings": [
+; CHECK-NEXT:   {
+; CHECK-NEXT:     "source": "M",
+; CHECK-NOT:    "source"
+; CHECK:      ]

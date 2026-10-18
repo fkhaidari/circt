@@ -87,4 +87,5 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 // CHECK-NEXT:       "p": "p",
 // CHECK-NEXT:       "q": "q"
 // CHECK-NEXT:     }
-// CHECK-NEXT:   },
+// CHECK-NEXT:   }
+// CHECK-NEXT: ]
