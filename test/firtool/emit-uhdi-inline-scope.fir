@@ -67,6 +67,14 @@ circuit Top: %[[
 ; SCOPE:        "clock": {
 ; SCOPE-NEXT:     "source": {
 
+; A clock lowers to a one-bit signal; only its source name says it is a clock.
+; V2:      "types": {
+; V2-NEXT:   "bool": {
+; V2-NEXT:     "kind": "uint",
+; V2-NEXT:     "name": "Clock",
+; V2-NEXT:     "width": 1
+; V2-NEXT:   },
+
 ; Inlining turns Child's ports into plain signals of Top. Their direction was
 ; recorded before that, so the source module still declares its interface.
 ; V2:      "source": {

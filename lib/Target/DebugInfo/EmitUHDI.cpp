@@ -1795,9 +1795,7 @@ static Object layoutTypes(const Object &pool) {
     if (src)
       name = src->getString("name");
     Object n{{"kind", kind}};
-    if (kind == "uint" && name == "Clock")
-      n = Object{{"kind", "clock"}};
-    else if (kind == "uint" || kind == "sint")
+    if (kind == "uint" || kind == "sint")
       n["width"] = *t.get("width");
     if (kind == "struct") {
       Array fields;
