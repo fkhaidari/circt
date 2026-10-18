@@ -2018,11 +2018,8 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     if (!var.portDirection.empty())
       v["dir"] = var.portDirection;
     if (src)
-      if (auto *ext = src->getObject("x-chisel")) {
-        if (ext->getString("binding").value_or("").starts_with("Reg"))
-          v["kind"] = "reg";
+      if (auto *ext = src->getObject("x-chisel"))
         v["x-chisel"] = Object(*ext);
-      }
     sourceEntry(binding.source)
         .getObject("vars")
         ->try_emplace(key, std::move(v));

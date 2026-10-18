@@ -114,7 +114,8 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "lost": {
 // CHECK:            "r": {
-// CHECK-NEXT:         "kind": "reg",
+// CHECK-NOT:          "kind"
+// CHECK:                "binding": "Reg"
 // CHECK:            "params": [
 // CHECK-NEXT:         {
 // CHECK-NEXT:           "name": "w",
