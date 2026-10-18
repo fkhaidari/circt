@@ -319,17 +319,22 @@ struct FileTable {
 using circt::debuginfo::bestLocation;
 
 /// Location object; nullopt if no FileLineColLoc. `file` indexes the file list
-/// of whichever language the location belongs to.
-static std::optional<Object>
-locationObject(FileLineColLoc loc, StringRef prefix, FileTable &files) {
+/// of whichever language the location belongs to. A location without a file
+/// name lies in `unnamed`, if given.
+static std::optional<Object> locationObject(FileLineColLoc loc,
+                                            StringRef prefix, FileTable &files,
+                                            StringRef unnamed = {}) {
   if (!loc)
     return std::nullopt;
+  StringRef name = loc.getFilename().getValue();
+  if (name.empty())
+    name = unnamed;
   SmallString<128> path;
   if (prefix.empty())
-    path = loc.getFilename().getValue();
+    path = name;
   else {
     path = prefix;
-    llvm::sys::path::append(path, loc.getFilename().getValue());
+    llvm::sys::path::append(path, name);
   }
   auto fileIdx = files.internIfNamed(path);
   if (!fileIdx)
@@ -870,6 +875,9 @@ struct EmitState {
   StringRef chiselPrefix, verilogPrefix;
   bool onlyExisting;
   llvm::StringMap<bool> &existsCache;
+  /// Layout 2: the netlist an emitted location without a file name lies in,
+  /// as ExportVerilog writes one file without naming it.
+  StringRef unnamedVerilogFile = {};
 
   std::optional<Object> chiselLoc(Location loc) {
     return locationObject(
@@ -879,7 +887,7 @@ struct EmitState {
   std::optional<Object> verilogLoc(Location loc) {
     return locationObject(
         bestLocation(loc, /*emitted=*/true, onlyExisting, &existsCache),
-        verilogPrefix, verilogFiles);
+        verilogPrefix, verilogFiles, unnamedVerilogFile);
   }
 };
 
@@ -984,7 +992,8 @@ private:
                      options.sourceFilePrefix,
                      options.outputFilePrefix,
                      options.onlyExistingFileLocs,
-                     existsCache};
+                     existsCache,
+                     options.format == 2 ? options.verilogFileName : ""};
   }
 
   ScopeRecord &addScope(StringRef id, StringRef kind);
@@ -2187,7 +2196,55 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
   for (auto &path : verilogFiles.ordered)
     files.push_back(Object{{"path", path}, {"target", true}});
 
-  Array profiles{"x-chisel"};
+  // A port an aggregate covers is dropped after its type was interned, so
+  // keep only the types the variables reach.
+  Object pool2 = layoutTypes(pool);
+  Object liveTypes;
+  SmallVector<std::string> work;
+  for (auto &[name, entry] : sources)
+    for (auto &[key, var] : *entry.getObject("vars"))
+      if (auto type = var.getAsObject()->getString("type"))
+        work.push_back(type->str());
+  while (!work.empty()) {
+    std::string key = work.pop_back_val();
+    if (liveTypes.get(key))
+      continue;
+    auto *type = pool2.getObject(key);
+    if (!type)
+      continue;
+    if (auto *fields = type->getArray("fields"))
+      for (auto &field : *fields)
+        if (auto ref = field.getAsObject()->getString("type"))
+          work.push_back(ref->str());
+    for (StringRef ref : {"elem", "base"})
+      if (auto r = type->getString(ref))
+        work.push_back(r->str());
+    liveTypes[key] = std::move(*type);
+  }
+
+  // Profiles the document uses, and only those.
+  std::function<bool(const llvm::json::Value &)> hasChisel =
+      [&](const llvm::json::Value &value) {
+        if (auto *object = value.getAsObject()) {
+          if (object->get("x-chisel"))
+            return true;
+          for (auto &kv : *object)
+            if (hasChisel(kv.second))
+              return true;
+        } else if (auto *array = value.getAsArray()) {
+          for (auto &element : *array)
+            if (hasChisel(element))
+              return true;
+        }
+        return false;
+      };
+  bool usesChisel = hasChisel(llvm::json::Value(Object(liveTypes))) ||
+                    hasChisel(llvm::json::Value(Object(targets)));
+  for (auto &[name, entry] : sources)
+    usesChisel |= hasChisel(llvm::json::Value(Object(entry)));
+  Array profiles;
+  if (usesChisel)
+    profiles.push_back("x-chisel");
   if (llvm::any_of(bindings, [](auto &binding) {
         return llvm::any_of(binding.vars,
                             [](auto &kv) { return hasExpr(kv.second); });
@@ -2199,7 +2256,7 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     j.attribute("producer", "firtool");
     j.attribute("profiles", std::move(profiles));
     j.attribute("files", std::move(files));
-    j.attribute("types", layoutTypes(pool));
+    j.attribute("types", std::move(liveTypes));
     j.attributeObject("source", [&] {
       for (auto &[name, entry] : sources)
         j.attribute(name, std::move(entry));

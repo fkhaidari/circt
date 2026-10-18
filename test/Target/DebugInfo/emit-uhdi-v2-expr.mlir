@@ -33,7 +33,6 @@ hw.module @E(in %a : i8, in %b : i8, in %s : i1, out o : i8, out r : i1, out q :
 
 // The profile is listed only because an expression is used.
 // CHECK:      "profiles": [
-// CHECK-NEXT:   "x-chisel",
 // CHECK-NEXT:   "expr"
 // CHECK-NEXT: ],
 
