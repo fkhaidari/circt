@@ -3,7 +3,7 @@
 
 ; Lowering turns the memory into a module of its own. The frontend never
 ; declared it, so it lives in the target only: no source module, no binding,
-; and the instance names no source.
+; and no variable stands for its instance.
 
 FIRRTL version 4.0.0
 circuit M :
@@ -35,14 +35,9 @@ circuit M :
 ; CHECK-NOT:    "m_
 ; CHECK:      "target": {
 ; CHECK-NEXT:   "M": {
-; CHECK-NEXT:     "file": 0,
-; CHECK-NEXT:     "inst": {
-; CHECK-NEXT:       "m_ext": {
-; CHECK-NEXT:         "module": "[[MEM:m_[0-9x]+]]"
-; CHECK-NEXT:       }
-; CHECK-NEXT:     }
+; CHECK-NEXT:     "file": 0
 ; CHECK-NEXT:   },
-; CHECK-NEXT:   "[[MEM]]": {
+; CHECK-NEXT:   "{{m_[0-9x]+}}": {
 ; CHECK-NEXT:     "file": 0
 ; CHECK-NEXT:   }
 ; CHECK-NEXT: },

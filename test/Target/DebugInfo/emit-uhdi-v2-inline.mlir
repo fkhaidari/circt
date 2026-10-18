@@ -2,7 +2,8 @@
 
 // An inlined instance binds the module it inlined into the module it was
 // inlined into, at its dotted instance path. A scope nested in another one
-// extends the path.
+// extends the path. The instance is a variable of the module that declares
+// it, typed by the module it inlined, and its value is that path.
 
 #locMid = loc("Top.scala":3:5)
 #locLeaf = loc("Mid.scala":7:9)
@@ -17,14 +18,44 @@ hw.module @Top(in %a : i8, out o : i8) {
   hw.output %a : i8
 }
 
+// CHECK:      "types": {
+// CHECK-NEXT:   "module_Leaf": {
+// CHECK-NEXT:     "kind": "module",
+// CHECK-NEXT:     "module": "Leaf"
+// CHECK-NEXT:   },
+// CHECK-NEXT:   "module_Mid": {
+// CHECK-NEXT:     "kind": "module",
+// CHECK-NEXT:     "module": "Mid"
+// CHECK-NEXT:   },
+
 // CHECK:      "source": {
 // CHECK-NEXT:   "Leaf": {
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "x": {
 // CHECK:          "Mid": {
 // CHECK-NEXT:     "vars": {
+// CHECK-NEXT:       "h": {
+// CHECK-NEXT:         "loc": [
+// CHECK-NEXT:           {{[0-9]+}},
+// CHECK-NEXT:           7,
+// CHECK-NEXT:           9
+// CHECK-NEXT:         ],
+// CHECK-NEXT:         "type": "module_Leaf"
+// CHECK-NEXT:       },
 // CHECK-NEXT:       "y": {
 // CHECK:          "Top": {
+// CHECK:            "m": {
+// CHECK-NEXT:         "loc": [
+// CHECK-NEXT:           {{[0-9]+}},
+// CHECK-NEXT:           3,
+// CHECK-NEXT:           5
+// CHECK-NEXT:         ],
+// CHECK-NEXT:         "type": "module_Mid"
+// CHECK-NEXT:       },
+
+// CHECK:      "target": {
+// CHECK-NEXT:   "Top": {}
+// CHECK-NEXT: },
 
 // CHECK:      "bindings": [
 // CHECK-NEXT:   {
@@ -32,28 +63,24 @@ hw.module @Top(in %a : i8, out o : i8) {
 // CHECK-NEXT:     "target": "Top",
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "a": "a",
+// CHECK-NEXT:       "m": {
+// CHECK-NEXT:         "$inline": "m"
+// CHECK-NEXT:       },
 // CHECK-NEXT:       "o": "o"
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "at": [
-// CHECK-NEXT:       {{[0-9]+}},
-// CHECK-NEXT:       3,
-// CHECK-NEXT:       5
-// CHECK-NEXT:     ],
 // CHECK-NEXT:     "scope": "m",
 // CHECK-NEXT:     "source": "Mid",
 // CHECK-NEXT:     "target": "Top",
 // CHECK-NEXT:     "vars": {
+// CHECK-NEXT:       "h": {
+// CHECK-NEXT:         "$inline": "m.h"
+// CHECK-NEXT:       },
 // CHECK-NEXT:       "y": "a"
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "at": [
-// CHECK-NEXT:       {{[0-9]+}},
-// CHECK-NEXT:       7,
-// CHECK-NEXT:       9
-// CHECK-NEXT:     ],
 // CHECK-NEXT:     "scope": "m.h",
 // CHECK-NEXT:     "source": "Leaf",
 // CHECK-NEXT:     "target": "Top",

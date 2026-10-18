@@ -2,7 +2,8 @@
 
 // Dedup merged B into A: the variables it moved carry `dbg.origin`, and
 // `dbg.origins` keeps B's location and class. Each source module binds into
-// A on its own, and the instances do not claim either source.
+// A on its own. Each instance is typed by the module it stood for and bound
+// to the module that replaced it.
 
 #locA = loc("A.scala":1:1)
 #locB = loc("B.scala":1:1)
@@ -55,19 +56,17 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 // CHECK:          "x-chisel": {
 // CHECK-NEXT:       "typeName": "ClassB"
 // CHECK-NEXT:     }
+// CHECK-NEXT:   },
+// CHECK-NEXT:   "Top": {
+// CHECK:            "ia": {
+// CHECK:              "type": "module_A"
+// CHECK:            "ib": {
+// CHECK:              "type": "module_B"
 
 // CHECK:      "target": {
 // CHECK-NEXT:   "A": {},
-// CHECK-NEXT:   "Top": {
-// CHECK-NEXT:     "inst": {
-// CHECK-NEXT:       "ia": {
-// CHECK:              "module": "A",
-// CHECK-NEXT:         "source": "A"
-// CHECK-NEXT:       },
-// CHECK-NEXT:       "ib": {
-// CHECK:              "module": "A",
-// CHECK-NEXT:         "source": "B"
-// CHECK-NEXT:       }
+// CHECK-NEXT:   "Top": {}
+// CHECK-NEXT: },
 
 // CHECK:      "bindings": [
 // CHECK-NEXT:   {
@@ -86,6 +85,23 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 // CHECK-NEXT:       "beta": "w",
 // CHECK-NEXT:       "p": "p",
 // CHECK-NEXT:       "q": "q"
+// CHECK-NEXT:     }
+// CHECK-NEXT:   },
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "source": "Top",
+// CHECK-NEXT:     "target": "Top",
+// CHECK-NEXT:     "vars": {
+// CHECK-NEXT:       "a": "a",
+// CHECK-NEXT:       "ia": {
+// CHECK-NEXT:         "$inst": "ia",
+// CHECK-NEXT:         "module": "A"
+// CHECK-NEXT:       },
+// CHECK-NEXT:       "ib": {
+// CHECK-NEXT:         "$inst": "ib",
+// CHECK-NEXT:         "module": "A"
+// CHECK-NEXT:       },
+// CHECK-NEXT:       "x": "x",
+// CHECK-NEXT:       "y": "y"
 // CHECK-NEXT:     }
 // CHECK-NEXT:   }
 // CHECK-NEXT: ]

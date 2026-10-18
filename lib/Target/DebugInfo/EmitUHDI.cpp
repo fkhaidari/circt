@@ -1995,18 +1995,27 @@ struct BindingRecord {
   BindingRecord(StringRef source, StringRef target, StringRef scope = {})
       : source(source), target(target), scope(scope) {}
   std::string source, target, scope;
-  std::optional<Array> at;
   Object vars;
   /// Uses of each variable name, to tell two declarations of one name apart.
   llvm::StringMap<unsigned> names;
 };
 
+/// An instance as a variable of the source module that declares it: its type
+/// is the module it instantiates as written, and its value names the Verilog
+/// instance with its module, or the inline scope it became.
+struct InstanceVar {
+  std::string source, target, scope;
+  std::string name, module;
+  std::optional<Array> loc;
+  llvm::json::Value value;
+};
+
 /// Layout 2 splits what layout 1 nests under `modules`: `source` describes the
-/// modules as written, keyed by their name before dedup; `target` the Verilog
-/// modules and instances; `bindings` maps the variables of a source module to
-/// signals of a target module, at the dotted inline path `scope` when it was
-/// inlined. A target that dedup made out of several sources has a binding per
-/// source, and its instances do not claim to know which one they are.
+/// modules as written, keyed by their name before dedup, with each instance a
+/// variable typed by its module; `target` lists the Verilog modules;
+/// `bindings` maps the variables of a source module to signals of a target
+/// module, at the dotted inline path `scope` when it was inlined. A target
+/// that dedup made out of several sources has a binding per source.
 void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
   EmitState s = state();
   // Interning grows the source file list, so it has to settle before the
@@ -2107,18 +2116,55 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
   std::vector<BindingRecord> bindings;
   llvm::StringSet<> boundModules;
   Object targets;
+  std::vector<InstanceVar> instanceVars;
 
-  // An inline scope binds the module it inlined, at its path in `target`.
-  std::function<void(unsigned, StringRef, const std::string &)> addInline =
-      [&](unsigned index, StringRef target, const std::string &parentPath) {
+  // A module the frontend said nothing about, such as a memory lowering made,
+  // has no source and lives in the target only, unless it instantiates a
+  // source module: that instance is a variable of it.
+  llvm::StringSet<> sourceModules;
+  for (unsigned index : topLevelScopes) {
+    ScopeRecord &scope = scopes[index];
+    if (scope.kind == "extmodule" ||
+        scope.op->getAttrOfType<DictionaryAttr>(kDbgOriginsAttr) ||
+        scope.source.getObject("x-chisel") ||
+        instanceClasses.contains(scope.id) || !scope.childScopes.empty() ||
+        !llvm::all_of(scope.vars,
+                      [](const VarRecord &var) { return var.synthesized; }))
+      sourceModules.insert(scope.id);
+  }
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (unsigned index : topLevelScopes) {
+      ScopeRecord &scope = scopes[index];
+      if (!sourceModules.contains(scope.id) &&
+          llvm::any_of(scope.instances, [&](const InstanceRecord &inst) {
+            return !inst.origin.empty() ||
+                   sourceModules.contains(inst.moduleRef);
+          }))
+        changed = sourceModules.insert(scope.id).second;
+    }
+  }
+
+  // An inline scope binds the module it inlined, at its path in `target`,
+  // and is an instance of each source that declares it.
+  std::function<void(unsigned, StringRef, const std::string &,
+                     ArrayRef<std::string>)>
+      addInline = [&](unsigned index, StringRef target,
+                      const std::string &parentPath,
+                      ArrayRef<std::string> parents) {
         ScopeRecord &scope = scopes[index];
         auto op = cast<debug::ScopeOp>(scope.op);
         std::string path =
             parentPath.empty()
                 ? op.getInstanceName().str()
                 : (parentPath + "." + op.getInstanceName()).str();
+        for (auto &parent : parents)
+          instanceVars.push_back({parent, target.str(), parentPath,
+                                  op.getInstanceName().str(),
+                                  op.getModuleName().str(),
+                                  locTuple(scope.source.getObject("loc")),
+                                  Object{{"$inline", path}}});
         BindingRecord binding(op.getModuleName(), target, path);
-        binding.at = locTuple(scope.source.getObject("loc"));
         Object &entry = sourceEntry(binding.source);
         if (auto *ext = scope.source.getObject("x-chisel");
             ext && !entry.get("x-chisel"))
@@ -2129,7 +2175,7 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
             addVar(binding, var, leaves);
         bindings.push_back(std::move(binding));
         for (unsigned child : scope.childScopes)
-          addInline(child, target, path);
+          addInline(child, target, path, {op.getModuleName().str()});
       };
 
   for (unsigned index : topLevelScopes) {
@@ -2141,19 +2187,21 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     if (scope.kind == "extmodule") {
       module["kind"] = "extern";
       targets[target] = std::move(module);
+      // The frontend declared it, so its instances are variables too; it
+      // has nothing inside to bind.
+      Object &entry = sourceEntry(scope.id);
+      if (auto loc = locTuple(scope.source.getObject("loc")))
+        entry["loc"] = std::move(*loc);
+      bindings.emplace_back(scope.id, target);
+      boundModules.insert(scope.id);
       continue;
     }
 
-    // A module the frontend said nothing about, such as a memory lowering
-    // made, has no source and lives in the target only.
-    auto origins = scope.op->getAttrOfType<DictionaryAttr>(kDbgOriginsAttr);
-    if (!origins && !scope.source.getObject("x-chisel") &&
-        !instanceClasses.contains(scope.id) && scope.childScopes.empty() &&
-        llvm::all_of(scope.vars,
-                     [](const VarRecord &var) { return var.synthesized; })) {
+    if (!sourceModules.contains(scope.id)) {
       targets[target] = std::move(module);
       continue;
     }
+    auto origins = scope.op->getAttrOfType<DictionaryAttr>(kDbgOriginsAttr);
 
     // The module's own source first, then each one dedup merged into it.
     SmallVector<BindingRecord, 1> own;
@@ -2219,36 +2267,69 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
              var, leaves);
     }
     boundModules.insert(scope.id);
+    // Every source merged into this module declares what it instantiates.
+    SmallVector<std::string> parents;
+    for (auto &binding : own)
+      parents.push_back(binding.source);
     for (auto &binding : own)
       bindings.push_back(std::move(binding));
     for (unsigned child : scope.childScopes)
-      addInline(child, target, "");
+      addInline(child, target, "", parents);
     targets[target] = std::move(module);
   }
 
-  // Instances last. Dedup tags an instance with the module it stood for;
-  // an untagged one stands for the module it instantiates, unless that one
-  // has no bindings (an external module).
+  // Instances last, once every source is known. Dedup tags an instance with
+  // the module it stood for; an untagged one stands for the module it
+  // instantiates. One with no source, such as a memory lowering made, is a
+  // part of the target only.
   for (unsigned index : topLevelScopes) {
     ScopeRecord &scope = scopes[index];
-    if (scope.instances.empty())
-      continue;
-    Object insts;
+    StringRef target = verilogNames[scope.id];
     for (auto &inst : scope.instances) {
-      Object entry{{"module", verilogNames.lookup(inst.moduleRef)}};
-      if (!inst.origin.empty())
-        entry["source"] = inst.origin;
-      else if (boundModules.contains(inst.moduleRef))
-        entry["source"] = inst.moduleRef;
+      StringRef module = !inst.origin.empty() ? StringRef(inst.origin)
+                         : boundModules.contains(inst.moduleRef)
+                             ? StringRef(inst.moduleRef)
+                             : StringRef();
+      if (module.empty())
+        continue;
       auto name = inst.target.getString("name");
-      if (name)
-        entry["name"] = inst.as;
-      if (auto at = locTuple(inst.source.getObject("loc")))
-        entry["at"] = std::move(*at);
-      insts[name ? name->str() : inst.as] = std::move(entry);
+      Object value{{"$inst", name ? name->str() : inst.as},
+                   {"module", verilogNames.lookup(inst.moduleRef)}};
+      for (auto &binding : bindings)
+        if (binding.target == target && binding.scope.empty())
+          instanceVars.push_back(
+              {binding.source, target.str(), "", inst.as, module.str(),
+               locTuple(inst.source.getObject("loc")), Object(value)});
     }
-    (*targets.getObject(verilogNames[scope.id]))["inst"] = std::move(insts);
   }
+
+  // An instance is typed by the module it instantiates.
+  std::map<std::string, std::string> moduleTypes;
+  for (auto &inst : instanceVars) {
+    auto [it, inserted] = moduleTypes.try_emplace(inst.module);
+    if (!inserted)
+      continue;
+    std::string id = "module_" + inst.module;
+    while (pool.get(id))
+      id += "_";
+    it->second = id;
+  }
+  for (auto &inst : instanceVars)
+    for (auto &binding : bindings) {
+      if (binding.source != inst.source || binding.target != inst.target ||
+          binding.scope != inst.scope)
+        continue;
+      unsigned n = binding.names[inst.name]++;
+      std::string key = n == 0 ? inst.name : (inst.name + "." + Twine(n)).str();
+      Object v{{"type", moduleTypes[inst.module]}};
+      if (inst.loc)
+        v["loc"] = Array(*inst.loc);
+      sourceEntry(inst.source)
+          .getObject("vars")
+          ->try_emplace(key, std::move(v));
+      binding.vars[key] = inst.value;
+      break;
+    }
 
   Array files;
   for (auto &path : chiselFiles.ordered)
@@ -2281,6 +2362,8 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
         work.push_back(r->str());
     liveTypes[key] = std::move(*type);
   }
+  for (auto &[module, id] : moduleTypes)
+    liveTypes[id] = Object{{"kind", "module"}, {"module", module}};
 
   // Profiles the document uses, and only those.
   std::function<bool(const llvm::json::Value &)> hasChisel =
@@ -2329,8 +2412,6 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
                      {"vars", std::move(binding.vars)}};
         if (!binding.scope.empty())
           entry["scope"] = binding.scope;
-        if (binding.at)
-          entry["at"] = std::move(*binding.at);
         j.value(std::move(entry));
       }
     });

@@ -4,15 +4,32 @@
 ; RUN: firtool -g --emit-uhdi --uhdi-format=2 --uhdi-output-file=%t.inline.json %t.inline.fir -o %t.inline.sv
 ; RUN: FileCheck %s --check-prefix=INLINE --input-file=%t.inline.json
 
-; Dedup merges B into A. Each instance still names the source module it stood
-; for, kept or inlined.
+; Dedup merges B into A. Each instance is still typed by the source module it
+; stood for, kept or inlined.
 
-; KEEP:      "ia": {
-; KEEP-NEXT:   "module": "A",
-; KEEP-NEXT:   "source": "A"
-; KEEP:      "ib": {
-; KEEP-NEXT:   "module": "A",
-; KEEP-NEXT:   "source": "B"
+; KEEP:      "Top": {
+; KEEP:        "ia": {
+; KEEP-NEXT:     "type": "module_A"
+; KEEP:        "ib": {
+; KEEP-NEXT:     "type": "module_B"
+; KEEP:      "source": "Top",
+; KEEP:        "ia": {
+; KEEP-NEXT:     "$inst": "ia",
+; KEEP-NEXT:     "module": "A"
+; KEEP:        "ib": {
+; KEEP-NEXT:     "$inst": "ib",
+; KEEP-NEXT:     "module": "A"
+
+; INLINE:      "Top": {
+; INLINE:        "ia": {
+; INLINE-NEXT:     "type": "module_A"
+; INLINE:        "ib": {
+; INLINE-NEXT:     "type": "module_B"
+; INLINE:      "source": "Top",
+; INLINE:        "ia": {
+; INLINE-NEXT:     "$inline": "ia"
+; INLINE:        "ib": {
+; INLINE-NEXT:     "$inline": "ib"
 
 ; INLINE:      "scope": "ia",
 ; INLINE-NEXT: "source": "A",

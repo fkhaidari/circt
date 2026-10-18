@@ -82,6 +82,14 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:     "kind": "vector",
 // CHECK-NEXT:     "size": 2
 // CHECK-NEXT:   },
+// CHECK-NEXT:   "module_Child": {
+// CHECK-NEXT:     "kind": "module",
+// CHECK-NEXT:     "module": "Child"
+// CHECK-NEXT:   },
+// CHECK-NEXT:   "module_Ext": {
+// CHECK-NEXT:     "kind": "module",
+// CHECK-NEXT:     "module": "Ext"
+// CHECK-NEXT:   },
 // CHECK-NEXT:   "pkg.Op": {
 // CHECK-NEXT:     "base": "uint2",
 // CHECK-NEXT:     "kind": "enum",
@@ -127,12 +135,27 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:       "typeName": "ChildClass"
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
+// An extern module is declared in the source too, with nothing inside.
+// CHECK-NEXT:   "Ext": {
+// CHECK:          "vars": {}
+// CHECK-NEXT:   },
+// An instance is a variable typed by the module it instantiates, at the
+// place it was declared.
 // CHECK-NEXT:   "Top": {
+// CHECK:            "c": {
+// CHECK-NEXT:         "loc": [
+// CHECK-NEXT:           1,
+// CHECK-NEXT:           4,
+// CHECK-NEXT:           5
+// CHECK-NEXT:         ],
+// CHECK-NEXT:         "type": "module_Child"
+// CHECK-NEXT:       },
+// CHECK:            "e": {
+// CHECK:              "type": "module_Ext"
 // CHECK:          "x-chisel": {
 // CHECK-NEXT:       "typeName": "Top"
 
-// An instance is keyed by its Verilog name. An extern module has no source,
-// so its instance names none.
+// The target lists the Verilog modules only.
 // CHECK:      "target": {
 // CHECK-NEXT:   "Child": {
 // CHECK-NEXT:     "file": [[SV:[0-9]+]]
@@ -141,22 +164,9 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:     "kind": "extern"
 // CHECK-NEXT:   },
 // CHECK-NEXT:   "Top": {
-// CHECK-NEXT:     "file": [[SV]],
-// CHECK-NEXT:     "inst": {
-// CHECK-NEXT:       "c_0": {
-// CHECK-NEXT:         "at": [
-// CHECK-NEXT:           1,
-// CHECK-NEXT:           4,
-// CHECK-NEXT:           5
-// CHECK-NEXT:         ],
-// CHECK-NEXT:         "module": "Child",
-// CHECK-NEXT:         "name": "c",
-// CHECK-NEXT:         "source": "Child"
-// CHECK-NEXT:       },
-// CHECK-NEXT:       "e": {
-// CHECK-NOT:          "source"
-// CHECK:              "module": "Ext"
-// CHECK-NEXT:       }
+// CHECK-NEXT:     "file": [[SV]]
+// CHECK-NEXT:   }
+// CHECK-NEXT: },
 
 // A struct value is an object, a vector an array. A value optimized away is
 // marked as such, in a vector too.
@@ -183,11 +193,25 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // CHECK-NEXT:   {
+// CHECK-NEXT:     "source": "Ext",
+// CHECK-NEXT:     "target": "Ext",
+// CHECK-NEXT:     "vars": {}
+// CHECK-NEXT:   },
+// An instance binds to its Verilog name and the module it instantiates.
+// CHECK-NEXT:   {
 // CHECK-NEXT:     "source": "Top",
 // CHECK-NEXT:     "target": "Top",
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "a": "a",
 // CHECK-NEXT:       "b": "b",
+// CHECK-NEXT:       "c": {
+// CHECK-NEXT:         "$inst": "c_0",
+// CHECK-NEXT:         "module": "Child"
+// CHECK-NEXT:       },
+// CHECK-NEXT:       "e": {
+// CHECK-NEXT:         "$inst": "e",
+// CHECK-NEXT:         "module": "Ext"
+// CHECK-NEXT:       },
 // CHECK-NEXT:       "k": {
 // CHECK-NEXT:         "$const": "0b00000101"
 // CHECK-NEXT:       },
