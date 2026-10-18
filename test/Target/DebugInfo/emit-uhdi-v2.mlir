@@ -159,17 +159,9 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:       }
 
 // A struct value is an object, a vector an array. A value optimized away is
-// marked as such, in a vector too. `hdl_locs` keeps the Verilog side of a
-// location, in the target file.
+// marked as such, in a vector too.
 // CHECK:      "bindings": [
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "hdl_locs": {
-// CHECK-NEXT:       "r": [
-// CHECK-NEXT:         [[SV]],
-// CHECK-NEXT:         9,
-// CHECK-NEXT:         5
-// CHECK-NEXT:       ]
-// CHECK-NEXT:     },
 // CHECK-NEXT:     "source": "Child",
 // CHECK-NEXT:     "target": "Child",
 // CHECK-NEXT:     "vars": {

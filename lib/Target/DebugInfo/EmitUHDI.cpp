@@ -1957,7 +1957,7 @@ struct BindingRecord {
       : source(source), target(target), scope(scope) {}
   std::string source, target, scope;
   std::optional<Array> at;
-  Object vars, hdlLocs;
+  Object vars;
   /// Uses of each variable name, to tell two declarations of one name apart.
   llvm::StringMap<unsigned> names;
 };
@@ -2046,16 +2046,11 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     if (isLeafBinding(*verilog)) {
       binding.vars[key] =
           leafValue(*verilog, leafWidth(pool, *e.getString("typeRef")));
-      if (auto *o = verilog->getAsObject())
-        if (auto loc = locTuple(o->getObject("loc"), offset))
-          binding.hdlLocs[key] = std::move(*loc);
       return;
     }
     auto value = aggregateValue(pool, *e.getString("typeRef"),
                                 *verilog->getAsObject(), "");
     binding.vars[key] = value ? std::move(*value) : noValue();
-    if (auto loc = locTuple(target->getObject("loc"), offset))
-      binding.hdlLocs[key] = std::move(*loc);
   };
   auto leavesOf = [&](ScopeRecord &scope) {
     llvm::StringSet<> leaves;
@@ -2297,8 +2292,6 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
           entry["scope"] = binding.scope;
         if (binding.at)
           entry["at"] = std::move(*binding.at);
-        if (!binding.hdlLocs.empty())
-          entry["hdl_locs"] = std::move(binding.hdlLocs);
         j.value(std::move(entry));
       }
     });
