@@ -2,7 +2,8 @@
 
 // A variable whose value has no signal of its own is bound to the expression
 // that computes it, in HGLDD's operator names. Constants inside an expression
-// keep their full width. A value that drives an output port binds to the port,
+// keep their full width, and the operands of a signed op read as `$signed`,
+// as in Verilog. A value that drives an output port binds to the port,
 // also when lowering cloned the op that computes it.
 
 #loc = loc("E.scala":1:1)
@@ -10,6 +11,7 @@
 hw.module @E(in %a : i8, in %b : i8, in %s : i1, out o : i8, out r : i1, out q : i1) {
   %c1_i1 = hw.constant 1 : i1
   %c3_i4 = hw.constant 3 : i4
+  %c3_i8 = hw.constant 3 : i8
   %notS = comb.xor %s, %c1_i1 : i1
   dbg.variable "notS", %notS : i1 loc(#loc)
   %lo = comb.extract %a from 0 : (i8) -> i4
@@ -20,6 +22,8 @@ hw.module @E(in %a : i8, in %b : i8, in %s : i1, out o : i8, out r : i1, out q :
   %eq = comb.icmp eq %a, %b : i8
   %sel = comb.mux %eq, %a, %b : i8
   dbg.variable "sel", %sel : i8 loc(#loc)
+  %lt = comb.icmp slt %a, %c3_i8 : i8
+  dbg.variable "lt", %lt : i1 loc(#loc)
   %drv = comb.or %s, %c1_i1 : i1
   dbg.variable "drv", %drv : i1 loc(#loc)
   %busy = sv.reg : !hw.inout<i1>
@@ -55,6 +59,25 @@ hw.module @E(in %a : i8, in %b : i8, in %s : i1, out o : i8, out r : i1, out q :
 // CHECK-NEXT:       ]
 // CHECK-NEXT:     },
 // CHECK-NEXT:     "drv": "r",
+// CHECK-NEXT:     "lt": {
+// CHECK-NEXT:       "$op": "<",
+// CHECK-NEXT:       "args": [
+// CHECK-NEXT:         {
+// CHECK-NEXT:           "$op": "$signed",
+// CHECK-NEXT:           "args": [
+// CHECK-NEXT:             "a"
+// CHECK-NEXT:           ]
+// CHECK-NEXT:         },
+// CHECK-NEXT:         {
+// CHECK-NEXT:           "$op": "$signed",
+// CHECK-NEXT:           "args": [
+// CHECK-NEXT:             {
+// CHECK-NEXT:               "$const": "0b00000011"
+// CHECK-NEXT:             }
+// CHECK-NEXT:           ]
+// CHECK-NEXT:         }
+// CHECK-NEXT:       ]
+// CHECK-NEXT:     },
 // CHECK-NEXT:     "notS": {
 // CHECK-NEXT:       "$op": "^",
 // CHECK-NEXT:       "args": [

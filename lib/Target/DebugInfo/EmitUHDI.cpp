@@ -1180,7 +1180,8 @@ static StringAttr drivenOutputName(mlir::Value value) {
 /// A value that no signal carries, as the combinational op over signals and
 /// literals that computes it: `{$op, args}`, with a `$` so that it never reads
 /// as a struct member. `R{}` takes the count first and `[]` takes the high and
-/// low bit last, as plain numbers.
+/// low bit last, as plain numbers. As in Verilog, the operands of a signed op
+/// are wrapped in `$signed`.
 static std::optional<llvm::json::Value> exprBinding(mlir::Value value) {
   auto *op = value.getDefiningOp();
   if (!op)
@@ -1188,18 +1189,23 @@ static std::optional<llvm::json::Value> exprBinding(mlir::Value value) {
   StringRef opcode = exprOpcode(op);
   if (opcode.empty())
     return std::nullopt;
+  bool isSigned = isa<comb::DivSOp, comb::ModSOp, comb::ShrSOp>(op);
+  if (auto cmp = dyn_cast<comb::ICmpOp>(op))
+    isSigned = comb::ICmpOp::isPredicateSigned(cmp.getPredicate());
   Array args;
   if (auto rep = dyn_cast<comb::ReplicateOp>(op))
     args.push_back(static_cast<int64_t>(rep.getMultiple()));
   for (auto operand : op->getOperands()) {
+    std::optional<llvm::json::Value> arg;
     // Nothing else gives a literal operand its width.
-    if (auto constant = operand.getDefiningOp<hw::ConstantOp>()) {
-      args.push_back(renderBits(constant.getValue()));
-      continue;
-    }
-    auto arg = leafBinding(operand, /*exprs=*/true);
+    if (auto constant = operand.getDefiningOp<hw::ConstantOp>())
+      arg = renderBits(constant.getValue());
+    else
+      arg = leafBinding(operand, /*exprs=*/true);
     if (!arg)
       return std::nullopt;
+    if (isSigned)
+      arg = Object{{"$op", "$signed"}, {"args", Array{std::move(*arg)}}};
     args.push_back(std::move(*arg));
   }
   if (auto extract = dyn_cast<comb::ExtractOp>(op)) {
