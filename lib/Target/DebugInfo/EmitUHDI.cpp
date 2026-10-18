@@ -920,6 +920,8 @@ struct VarRecord {
 struct InstanceRecord {
   std::string as;
   std::string moduleRef;
+  /// The module dedup merged into `moduleRef`, if this instance stood for it.
+  std::string origin;
   Object source;
   /// `target.loc`, the instance's own Verilog-side location.
   Object target;
@@ -1428,6 +1430,8 @@ void UhdiEmitter::collectModule(hw::HWModuleOp module, EmitState &s) {
     InstanceRecord rec;
     rec.as = inst.getInstanceName().str();
     rec.moduleRef = inst.getModuleName().str();
+    if (auto origin = inst->getAttrOfType<StringAttr>(kDbgOriginAttr))
+      rec.origin = origin.getValue().str();
     if (auto typeName = moduleSourceTypeName(inst))
       sourceExt(rec.source)["typeName"] = typeName.getValue().str();
     if (Array params = moduleSourceParams(inst); !params.empty())
@@ -1883,7 +1887,7 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
   };
 
   std::vector<BindingRecord> bindings;
-  llvm::StringMap<unsigned> unscopedBindings;
+  llvm::StringSet<> boundModules;
   Object targets;
 
   // An inline scope binds the module it inlined, at its path in `target`.
@@ -1986,7 +1990,7 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
       addVar(bindingOf(var.origin.empty() ? StringRef(scope.id) : var.origin),
              var, leaves);
     }
-    unscopedBindings[scope.id] = own.size();
+    boundModules.insert(scope.id);
     for (auto &binding : own)
       bindings.push_back(std::move(binding));
     for (unsigned child : scope.childScopes)
@@ -1994,8 +1998,9 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     targets[target] = std::move(module);
   }
 
-  // Instances last: whether one can name its source depends on the bindings
-  // of the module it instantiates.
+  // Instances last. Dedup tags an instance with the module it stood for;
+  // an untagged one stands for the module it instantiates, unless that one
+  // has no bindings (an external module).
   for (unsigned index : topLevelScopes) {
     ScopeRecord &scope = scopes[index];
     if (scope.instances.empty())
@@ -2003,7 +2008,9 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     Object insts;
     for (auto &inst : scope.instances) {
       Object entry{{"module", verilogNames.lookup(inst.moduleRef)}};
-      if (unscopedBindings.lookup(inst.moduleRef) == 1)
+      if (!inst.origin.empty())
+        entry["source"] = inst.origin;
+      else if (boundModules.contains(inst.moduleRef))
         entry["source"] = inst.moduleRef;
       auto name = inst.target.getString("name");
       if (name)

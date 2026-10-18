@@ -22,7 +22,7 @@ hw.module private @A(in %p : i8, out q : i8) attributes {dbg.origins = {B = {loc
 
 hw.module @Top(in %a : i8, out x : i8, out y : i8) {
   %ia.q = hw.instance "ia" @A(p: %a: i8) -> (q: i8) {dbg.moduleinfo = {typeName = "ClassA"}}
-  %ib.q = hw.instance "ib" @A(p: %a: i8) -> (q: i8) {dbg.moduleinfo = {typeName = "ClassB"}}
+  %ib.q = hw.instance "ib" @A(p: %a: i8) -> (q: i8) {dbg.moduleinfo = {typeName = "ClassB"}, dbg.origin = "B"}
   hw.output %ia.q, %ib.q : i8, i8
 }
 
@@ -61,12 +61,12 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 // CHECK-NEXT:   "Top": {
 // CHECK-NEXT:     "inst": {
 // CHECK-NEXT:       "ia": {
-// CHECK-NOT:          "source"
-// CHECK:              "module": "A"
+// CHECK:              "module": "A",
+// CHECK-NEXT:         "source": "A"
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "ib": {
-// CHECK-NOT:          "source"
-// CHECK:              "module": "A"
+// CHECK:              "module": "A",
+// CHECK-NEXT:         "source": "B"
 // CHECK-NEXT:       }
 
 // CHECK:      "bindings": [
