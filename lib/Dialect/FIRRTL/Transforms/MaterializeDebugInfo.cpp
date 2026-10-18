@@ -42,7 +42,8 @@ struct MaterializeDebugInfoPass
     : public circt::firrtl::impl::MaterializeDebugInfoBase<
           MaterializeDebugInfoPass> {
   void runOnOperation() override;
-  void materializeVariable(OpBuilder &builder, StringAttr name, Value value);
+  void materializeVariable(OpBuilder &builder, StringAttr name, Value value,
+                           std::optional<Direction> port = std::nullopt);
   void markLiveLeaves(Value value, uint64_t base, llvm::BitVector &live);
   static uint64_t maxFieldID(Type type);
 };
@@ -86,7 +87,7 @@ void MaterializeDebugInfoPass::runOnOperation() {
        llvm::zip(module.getPorts(), module.getArguments())) {
     if (!coveredByIntrinsic.contains(value) &&
         !coveredNameByIntrinsic.contains(port.name))
-      materializeVariable(builder, port.name, value);
+      materializeVariable(builder, port.name, value, port.direction);
   }
 
   module.walk([&](Operation *op) {
@@ -166,15 +167,21 @@ uint64_t MaterializeDebugInfoPass::maxFieldID(Type type) {
   return 0;
 }
 
-/// Materialize debug variable ops for a value.
-void MaterializeDebugInfoPass::materializeVariable(OpBuilder &builder,
-                                                   StringAttr name,
-                                                   Value value) {
+/// Materialize debug variable ops for a value; `port` is the direction when
+/// the value is a port of the module.
+void MaterializeDebugInfoPass::materializeVariable(
+    OpBuilder &builder, StringAttr name, Value value,
+    std::optional<Direction> port) {
   if (!name || isUselessName(name.getValue()))
     return;
   if (name.getValue().starts_with("_"))
     return;
-  if (auto dbgValue = convertToDebugAggregates(builder, value))
-    debug::VariableOp::create(builder, value.getLoc(), name, dbgValue,
-                              /*scope=*/Value{});
+  auto dbgValue = convertToDebugAggregates(builder, value);
+  if (!dbgValue)
+    return;
+  auto var = debug::VariableOp::create(builder, value.getLoc(), name, dbgValue,
+                                       /*scope=*/Value{});
+  if (port)
+    var->setAttr(debug::kDbgPortAttr,
+                 builder.getStringAttr(direction::toString(*port)));
 }

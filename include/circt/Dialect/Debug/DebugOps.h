@@ -39,6 +39,12 @@ inline constexpr llvm::StringLiteral kDbgModuleInfoAttr = "dbg.moduleinfo";
 /// which lowering erases. Absent when no field is flipped.
 inline constexpr llvm::StringLiteral kDbgFlipsAttr = "dbg.flips";
 
+/// On a `dbg.variable` that declares a port of its module: `"in"` or `"out"`.
+/// For a bundle it is the direction of the unflipped fields, as in FIRRTL.
+/// Stamped while the variable's value is still the port's block argument;
+/// lowering and inlining later turn ports into plain signals.
+inline constexpr llvm::StringLiteral kDbgPortAttr = "dbg.port";
+
 /// Name of the module a root debug op (`dbg.variable`, or a `dbg.scope`
 /// without a parent scope) came from, when dedup moved it out of that module
 /// into the module that replaced it. Absent means the enclosing module. On an

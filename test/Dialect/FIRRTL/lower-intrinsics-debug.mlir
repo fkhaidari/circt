@@ -230,7 +230,7 @@ firrtl.circuit "ZeroOperandVarPort" {
       out %b: !firrtl.uint<8>) {
     // Match by port name; resolves to the block argument %a.
     // CHECK: %[[V:.+]] = dbg.value %a typeName "UInt" : !firrtl.uint<8>
-    // CHECK: dbg.variable "a", %[[V]] : !dbg.value
+    // CHECK: dbg.variable "a", %[[V]] {dbg.port = "in"} : !dbg.value
     firrtl.int.generic "circt_debug_var"
       <name: none = "a", typeName: none = "UInt"> : () -> ()
 
@@ -563,7 +563,7 @@ firrtl.circuit "MixedPathSubfieldTest" {
 firrtl.circuit "SIntVar" {
   firrtl.module @SIntVar(in %s: !firrtl.sint<8>) {
     // CHECK: %[[V:.+]] = dbg.value %s typeName "SInt" : !firrtl.sint<8>
-    // CHECK: dbg.variable "s", %[[V]] : !dbg.value
+    // CHECK: dbg.variable "s", %[[V]] {dbg.port = "in"} : !dbg.value
     firrtl.int.generic "circt_debug_var"
       <name: none = "s", typeName: none = "SInt">
       %s : (!firrtl.sint<8>) -> ()
@@ -578,7 +578,7 @@ firrtl.circuit "SIntVar" {
 firrtl.circuit "ZeroWidthVar" {
   firrtl.module @ZeroWidthVar(in %z: !firrtl.uint<0>) {
     // CHECK: %[[V:.+]] = dbg.value %z typeName "UInt" : !firrtl.uint<0>
-    // CHECK: dbg.variable "z", %[[V]] : !dbg.value
+    // CHECK: dbg.variable "z", %[[V]] {dbg.port = "in"} : !dbg.value
     firrtl.int.generic "circt_debug_var"
       <name: none = "z", typeName: none = "UInt">
       %z : (!firrtl.uint<0>) -> ()

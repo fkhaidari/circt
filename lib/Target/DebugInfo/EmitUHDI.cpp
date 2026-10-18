@@ -897,6 +897,9 @@ struct VarRecord {
   std::string name;
   std::string typeRef;
   StringRef direction;
+  /// Layout 2: `in` or `out` when the variable declares a port, as the
+  /// frontend lowering recorded it.
+  StringRef portDirection;
   /// A port record is dropped when an aggregate variable already covers its
   /// signal; an instance view moves to `instances[..].target` instead.
   bool isPort = false;
@@ -1298,6 +1301,8 @@ VarRecord UhdiEmitter::collectVariable(debug::VariableOp var, EmitState &s,
   rec.name = var.getName().str();
   if (auto origin = var->getAttrOfType<StringAttr>(kDbgOriginAttr))
     rec.origin = origin.getValue();
+  if (auto port = var->getAttrOfType<StringAttr>(debug::kDbgPortAttr))
+    rec.portDirection = port.getValue();
 
   // Root-level source-language metadata rides on a `dbg.value` wrapper of the
   // variable's operand; unwrap it once and use the wrapped value for all
@@ -1460,6 +1465,7 @@ void UhdiEmitter::synthesizePortVars(
     rec.name = portName.str();
     rec.typeRef = types.internType(modType.getPorts()[i].type, mod.getLoc());
     rec.direction = modType.isOutput(i) ? "output" : "input";
+    rec.portDirection = modType.isOutput(i) ? "out" : "in";
     rec.isPort = true;
     rec.synthesized = true;
     rec.scalarSignal = portName.str();
@@ -2009,8 +2015,8 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     if (src)
       if (auto loc = locTuple(src->getObject("loc")))
         v["loc"] = std::move(*loc);
-    if (auto dir = e.getString("direction"))
-      v["dir"] = *dir == "input" ? "in" : *dir == "output" ? "out" : "inout";
+    if (!var.portDirection.empty())
+      v["dir"] = var.portDirection;
     if (src)
       if (auto *ext = src->getObject("x-chisel")) {
         if (ext->getString("binding").value_or("").starts_with("Reg"))

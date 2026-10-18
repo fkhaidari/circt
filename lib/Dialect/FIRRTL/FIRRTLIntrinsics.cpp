@@ -1232,8 +1232,13 @@ public:
           debug::ValueOp::create(rewriter, location, dbgValue, typeName, params)
               .getResult();
 
-    rewriter.replaceOpWithNewOp<debug::VariableOp>(gi.op, varName, dbgValue,
-                                                   /*scope=*/Value{});
+    auto var = rewriter.replaceOpWithNewOp<debug::VariableOp>(
+        gi.op, varName, dbgValue, /*scope=*/Value{});
+    if (auto arg = dyn_cast<BlockArgument>(rawSignal))
+      if (auto mod = dyn_cast<FModuleLike>(arg.getOwner()->getParentOp()))
+        var->setAttr(debug::kDbgPortAttr,
+                     rewriter.getStringAttr(direction::toString(
+                         mod.getPortDirection(arg.getArgNumber()))));
     return success();
   }
 

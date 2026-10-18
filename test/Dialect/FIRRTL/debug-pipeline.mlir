@@ -42,10 +42,10 @@ firrtl.circuit "PipelinePortCovered" {
     // MaterializeDebugInfo runs first and emits ports in declaration order,
     // skipping `data` (covered by the intrinsic). LowerIntrinsics then emits
     // the rich `dbg.variable "data"` at the intrinsic site.
-    // CHECK:     dbg.variable "clk", %{{.*}} : !firrtl.clock
+    // CHECK:     dbg.variable "clk", %{{.*}} {dbg.port = "in"} : !firrtl.clock
     // CHECK-NOT: dbg.variable "clk"
     // CHECK:     %[[D:.+]] = dbg.value %{{.*}} typeName "UInt" : !firrtl.uint<16>
-    // CHECK:     dbg.variable "data", %[[D]] : !dbg.value
+    // CHECK:     dbg.variable "data", %[[D]] {dbg.port = "in"} : !dbg.value
     // CHECK-NOT: dbg.variable "data"
   }
 }
@@ -109,13 +109,13 @@ firrtl.circuit "PipelineZeroOperand" {
     // `data` is name-covered by a 0-operand intrinsic -> same.
     // Emission order: clk (materialized at block start), then mem (intrinsic
     // site after wire), then data (intrinsic site after mem's intrinsic).
-    // CHECK:     dbg.variable "clk", %{{.*}} : !firrtl.clock
+    // CHECK:     dbg.variable "clk", %{{.*}} {dbg.port = "in"} : !firrtl.clock
     // CHECK-NOT: dbg.variable "clk"
     // CHECK:     %[[M:.+]] = dbg.value %{{.*}} typeName "UInt" : !firrtl.uint<32>
     // CHECK:     dbg.variable "mem", %[[M]] : !dbg.value
     // CHECK-NOT: dbg.variable "mem"
     // CHECK:     %[[D2:.+]] = dbg.value %{{.*}} typeName "UInt" : !firrtl.uint<16>
-    // CHECK:     dbg.variable "data", %[[D2]] : !dbg.value
+    // CHECK:     dbg.variable "data", %[[D2]] {dbg.port = "in"} : !dbg.value
     // CHECK-NOT: dbg.variable "data"
   }
 }
@@ -134,7 +134,7 @@ firrtl.circuit "PipelineRegCovered" {
 
     %r_plain = firrtl.reg %clk : !firrtl.clock, !firrtl.uint<4>
 
-    // CHECK:     dbg.variable "clk", %{{.*}} : !firrtl.clock
+    // CHECK:     dbg.variable "clk", %{{.*}} {dbg.port = "in"} : !firrtl.clock
     // CHECK:     %[[R:.+]] = dbg.value %{{.*}} typeName "UInt" : !firrtl.uint<8>
     // CHECK:     dbg.variable "r_covered", %[[R]] : !dbg.value
     // CHECK-NOT: dbg.variable "r_covered"

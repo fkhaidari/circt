@@ -3,6 +3,10 @@
 ;
 ; RUN: FileCheck %s --input-file=%t.uhdi.json --check-prefix=VAR
 ; RUN: FileCheck %s --input-file=%t.uhdi.json --check-prefix=SCOPE
+;
+; RUN: firtool -g -O=debug --emit-uhdi --uhdi-format=2 \
+; RUN:   --uhdi-output-file=%t.v2.json %s -o %t.v2.sv \
+; RUN:   && FileCheck %s --input-file=%t.v2.json --check-prefix=V2
 
 ; An inlined module leaves a `dbg.scope` behind but no `hw.instance`, so the
 ; scope carries a Chisel name only -- there is no Verilog-side instance left to
@@ -62,3 +66,19 @@ circuit Top: %[[
 ; SCOPE:      "scopes": [
 ; SCOPE:        "clock": {
 ; SCOPE-NEXT:     "source": {
+
+; Inlining turns Child's ports into plain signals of Top. Their direction was
+; recorded before that, so the source module still declares its interface.
+; V2:      "source": {
+; V2-NEXT:   "Child": {
+; V2-NEXT:     "vars": {
+; V2-NEXT:       "clock": {
+; V2-NEXT:         "dir": "in",
+; V2:            "p": {
+; V2-NEXT:         "dir": "in",
+; V2:            "q": {
+; V2-NEXT:         "dir": "out",
+; V2:            "w": {
+; V2-NOT:          "dir"
+; V2:            "x-chisel": {
+; V2-NEXT:         "binding": "Wire"
