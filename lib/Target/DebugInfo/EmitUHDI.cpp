@@ -1128,6 +1128,43 @@ static StringRef exprOpcode(Operation *op) {
       .Default([](auto) { return ""; });
 }
 
+/// Whether `a` and `b` compute the same value: the same value, reads of the
+/// same signal, or the same op over such operands. Lowering of a register
+/// read clones the op per user, so the debug value and the port it drives can
+/// be distinct but equal ops.
+static bool sameValue(mlir::Value a, mlir::Value b) {
+  if (a == b)
+    return true;
+  auto *opA = a.getDefiningOp(), *opB = b.getDefiningOp();
+  if (!opA || !opB || opA->getName() != opB->getName() ||
+      opA->getAttrDictionary() != opB->getAttrDictionary() ||
+      opA->getResultTypes() != opB->getResultTypes() ||
+      opA->getNumOperands() != opB->getNumOperands() || opA->getNumRegions() ||
+      opB->getNumRegions())
+    return false;
+  if (isa<sv::ReadInOutOp>(opA))
+    return opA->getOperand(0) == opB->getOperand(0);
+  if (!isa<comb::CombDialect>(opA->getDialect()))
+    return false;
+  return llvm::all_of(llvm::zip(opA->getOperands(), opB->getOperands()),
+                      [](auto pair) {
+                        return sameValue(std::get<0>(pair), std::get<1>(pair));
+                      });
+}
+
+/// The output port a value drives (`assign o = ~r;`), if any. Such a value
+/// has no wire of its own, but the port carries it.
+static StringAttr drivenOutputName(mlir::Value value) {
+  auto mod = value.getParentRegion()->getParentOfType<hw::HWModuleOp>();
+  if (!mod)
+    return {};
+  auto out = cast<hw::OutputOp>(mod.getBodyBlock()->getTerminator());
+  for (auto [i, operand] : llvm::enumerate(out.getOperands()))
+    if (sameValue(value, operand))
+      return mod.getOutputNameAttr(i);
+  return {};
+}
+
 /// A value that no signal carries, as the combinational op over signals and
 /// literals that computes it: `{$op, args}`, with a `$` so that it never reads
 /// as a struct member. `R{}` takes the count first and `[]` takes the high and
@@ -1174,9 +1211,11 @@ static std::optional<llvm::json::Value> leafBinding(mlir::Value value,
       opR && isa<hw::ConstantOp>(opR.getOwner()))
     return llvm::json::Value(
         renderConstant(cast<hw::ConstantOp>(opR.getOwner()).getValue()));
-  if (exprs)
-    return exprBinding(hwVal);
-  return std::nullopt;
+  if (!exprs)
+    return std::nullopt;
+  if (auto port = drivenOutputName(hwVal))
+    return llvm::json::Value(port.getValue().str());
+  return exprBinding(hwVal);
 }
 
 /// Record `binding`'s signal as covered by an aggregate, so a port record
@@ -1383,7 +1422,10 @@ VarRecord UhdiEmitter::collectVariable(debug::VariableOp var, EmitState &s,
     else
       rec.target = llvm::json::Value(rec.scalarSignal);
   } else if (options.format == 2) {
-    rec.target = exprBinding(unwrapToHwValue(rootVal));
+    if (auto port = drivenOutputName(unwrapToHwValue(rootVal)))
+      rec.target = llvm::json::Value(port.getValue().str());
+    else
+      rec.target = exprBinding(unwrapToHwValue(rootVal));
   }
   return rec;
 }

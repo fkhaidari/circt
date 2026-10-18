@@ -2,11 +2,12 @@
 
 // A variable whose value has no signal of its own is bound to the expression
 // that computes it, in HGLDD's operator names. Constants inside an expression
-// keep their full width.
+// keep their full width. A value that drives an output port binds to the port,
+// also when lowering cloned the op that computes it.
 
 #loc = loc("E.scala":1:1)
 
-hw.module @E(in %a : i8, in %b : i8, in %s : i1, out o : i8) {
+hw.module @E(in %a : i8, in %b : i8, in %s : i1, out o : i8, out r : i1, out q : i1) {
   %c1_i1 = hw.constant 1 : i1
   %c3_i4 = hw.constant 3 : i4
   %notS = comb.xor %s, %c1_i1 : i1
@@ -19,7 +20,15 @@ hw.module @E(in %a : i8, in %b : i8, in %s : i1, out o : i8) {
   %eq = comb.icmp eq %a, %b : i8
   %sel = comb.mux %eq, %a, %b : i8
   dbg.variable "sel", %sel : i8 loc(#loc)
-  hw.output %a : i8
+  %drv = comb.or %s, %c1_i1 : i1
+  dbg.variable "drv", %drv : i1 loc(#loc)
+  %busy = sv.reg : !hw.inout<i1>
+  %busy0 = sv.read_inout %busy : !hw.inout<i1>
+  %rdy0 = comb.xor bin %busy0, %c1_i1 : i1
+  dbg.variable "rdy", %rdy0 : i1 loc(#loc)
+  %busy1 = sv.read_inout %busy : !hw.inout<i1>
+  %rdy1 = comb.xor bin %busy1, %c1_i1 : i1
+  hw.output %a, %drv, %rdy1 : i8, i1, i1
 } loc(#loc)
 
 // The profile is listed only because an expression is used.
@@ -46,6 +55,7 @@ hw.module @E(in %a : i8, in %b : i8, in %s : i1, out o : i8) {
 // CHECK-NEXT:         }
 // CHECK-NEXT:       ]
 // CHECK-NEXT:     },
+// CHECK-NEXT:     "drv": "r",
 // CHECK-NEXT:     "notS": {
 // CHECK-NEXT:       "$op": "^",
 // CHECK-NEXT:       "args": [
@@ -56,6 +66,9 @@ hw.module @E(in %a : i8, in %b : i8, in %s : i1, out o : i8) {
 // CHECK-NEXT:       ]
 // CHECK-NEXT:     },
 // CHECK-NEXT:     "o": "o",
+// CHECK-NEXT:     "q": "q",
+// CHECK-NEXT:     "r": "r",
+// CHECK-NEXT:     "rdy": "q",
 // CHECK-NEXT:     "rep": {
 // CHECK-NEXT:       "$op": "R{}",
 // CHECK-NEXT:       "args": [
