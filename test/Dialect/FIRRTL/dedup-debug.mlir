@@ -105,7 +105,8 @@ firrtl.circuit "InstanceInfo" {
   firrtl.module private @B() {}
   firrtl.module @InstanceInfo() {
     // CHECK: firrtl.instance a {dbg.moduleinfo = {typeName = "ClassA"}} @A()
-    // CHECK: firrtl.instance b {dbg.moduleinfo = {typeName = "ClassB"}} @A()
+    // CHECK: firrtl.instance b {dbg.moduleinfo = {typeName = "ClassB"}, dbg.origin = "B"} @A()
+    // CHECK: firrtl.instance b2 {dbg.moduleinfo = {typeName = "ClassB"}, dbg.origin = "B"} @A()
     firrtl.instance a {dbg.moduleinfo = {typeName = "ClassA"}} @A()
     firrtl.instance b {dbg.moduleinfo = {typeName = "ClassB"}} @B()
     firrtl.instance b2 {dbg.moduleinfo = {typeName = "ClassB"}} @B()

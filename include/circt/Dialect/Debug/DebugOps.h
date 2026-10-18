@@ -41,7 +41,8 @@ inline constexpr llvm::StringLiteral kDbgFlipsAttr = "dbg.flips";
 
 /// Name of the module a root debug op (`dbg.variable`, or a `dbg.scope`
 /// without a parent scope) came from, when dedup moved it out of that module
-/// into the module that replaced it. Absent means the enclosing module.
+/// into the module that replaced it. Absent means the enclosing module. On an
+/// instance: the module it instantiated before dedup replaced that module.
 inline constexpr llvm::StringLiteral kDbgOriginAttr = "dbg.origin";
 
 /// On a module that dedup kept: maps the name of each module merged into it

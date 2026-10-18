@@ -117,6 +117,8 @@ struct StructuralHasherSharedConstants {
         StringAttr::get(context, debug::kDbgModuleInfoAttr));
     nonessentialAttributes.insert(
         StringAttr::get(context, debug::kDbgOriginsAttr));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgOriginAttr));
     nonessentialAttributes.insert(StringAttr::get(context, "inner_sym"));
     nonessentialAttributes.insert(StringAttr::get(context, "name"));
     nonessentialAttributes.insert(StringAttr::get(context, "portAnnotations"));
@@ -486,6 +488,8 @@ struct Equivalence {
         StringAttr::get(context, debug::kDbgModuleInfoAttr));
     nonessentialAttributes.insert(
         StringAttr::get(context, debug::kDbgOriginsAttr));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgOriginAttr));
   }
 
   struct ModuleData {
@@ -1133,11 +1137,22 @@ private:
         instanceGraph[::cast<igraph::ModuleOpInterface>(fromModule)];
     auto *toNode = instanceGraph[toModule];
     auto toModuleRef = FlatSymbolRefAttr::get(toModule.getModuleNameAttr());
+    // If the debug info of "fromModule" was kept, tag its instances with the
+    // module name, so that debug info can tell which merged module an
+    // instance stands for.
+    StringAttr origin;
+    auto fromName = cast<FModuleLike>(fromModule).getModuleNameAttr();
+    if (auto origins =
+            toModule->getAttrOfType<DictionaryAttr>(debug::kDbgOriginsAttr);
+        origins && origins.contains(fromName))
+      origin = fromName;
     for (auto *oldInstRec : llvm::make_early_inc_range(fromNode->uses())) {
       auto inst = oldInstRec->getInstance();
       if (auto instOp = dyn_cast<InstanceOp>(*inst)) {
         instOp.setModuleNameAttr(toModuleRef);
         instOp.setPortNamesAttr(toModule.getPortNamesAttr());
+        if (origin && !instOp->hasAttr(debug::kDbgOriginAttr))
+          instOp->setAttr(debug::kDbgOriginAttr, origin);
       } else if (auto objectOp = dyn_cast<ObjectOp>(*inst)) {
         auto classLike = cast<ClassLike>(*toNode->getModule());
         ClassType classType = detail::getInstanceTypeForClassLike(classLike);

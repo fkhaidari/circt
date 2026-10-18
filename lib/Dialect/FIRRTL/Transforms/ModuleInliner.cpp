@@ -1344,6 +1344,11 @@ private:
     SmallVector<Value> wires;                ///< Wires created for ports.
     FModuleOp childModule;                   ///< The module being inlined.
     Value debugScope;                        ///< Debug scope of the instance.
+    /// The module dedup merged into `childModule` that the instance stood
+    /// for, if any; only its debug info is inlined.
+    StringAttr debugOrigin;
+    /// Results of the debug ops of other origins, which are not inlined.
+    DenseSet<Value> skippedDebugValues;
     /// VNLAs active at this level, id-sorted (I6; see setActiveNLAsForChild).
     SmallVector<VirtualNLA *> activeNLAs;
 
@@ -1449,6 +1454,10 @@ private:
   /// every regular-module instance when `flatten` is set, otherwise the ones
   /// marked for inlining.
   LogicalResult processInstances(FModuleOp module, bool flatten);
+
+  /// Whether `op` is debug info of another module than the one the instance
+  /// being inlined stood for.
+  bool isForeignDebugOp(Operation &op, InliningLevel &il);
 
   /// Create a debug scope for an inlined instance at the current insertion
   /// point of the `il.mic` builder.
@@ -1606,6 +1615,7 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
   auto updateDebugScope = [&](auto op) {
     if (!op.getScope())
       op.getScopeMutable().assign(il.debugScope);
+    op->removeAttr(debug::kDbgOriginAttr);
   };
   if (auto varOp = dyn_cast<debug::VariableOp>(op))
     return updateDebugScope(varOp), false;
@@ -1966,6 +1976,9 @@ LogicalResult Inliner::processInto(StringRef prefix, InliningLevel &il,
                           << il.mic.module.getModuleName() << "\n");
 
   auto visit = [&](Operation *op) {
+    if (isForeignDebugOp(*op, il))
+      return success();
+
     // If the pass can't inline through it, clone it and continue.
     auto instance = getInlinableInstance(op);
     if (!instance) {
@@ -2074,11 +2087,34 @@ LogicalResult Inliner::processInstances(FModuleOp module, bool flatten) {
                      .wasInterrupted());
 }
 
+/// Dedup may have merged the debug info of several modules into the child
+/// module. Only the debug ops of the module the instance stood for are
+/// inlined, along with the ops that use them.
+bool Inliner::isForeignDebugOp(Operation &op, InliningLevel &il) {
+  if (!isa_and_nonnull<debug::DebugDialect>(op.getDialect()))
+    return false;
+  bool isRoot = false;
+  if (auto varOp = dyn_cast<debug::VariableOp>(op))
+    isRoot = !varOp.getScope();
+  else if (auto scopeOp = dyn_cast<debug::ScopeOp>(op))
+    isRoot = !scopeOp.getScope();
+  bool foreign = (isRoot && op.getAttrOfType<StringAttr>(
+                                debug::kDbgOriginAttr) != il.debugOrigin) ||
+                 llvm::any_of(op.getOperands(), [&](Value operand) {
+                   return il.skippedDebugValues.contains(operand);
+                 });
+  if (foreign)
+    il.skippedDebugValues.insert(op.result_begin(), op.result_end());
+  return foreign;
+}
+
 void Inliner::createDebugScope(InliningLevel &il, InstanceOp instance,
                                Value parentScope) {
+  il.debugOrigin = instance->getAttrOfType<StringAttr>(debug::kDbgOriginAttr);
   auto op = debug::ScopeOp::create(
       il.mic.b, instance.getLoc(), instance.getInstanceNameAttr(),
-      instance.getModuleNameAttr().getAttr(), parentScope);
+      il.debugOrigin ? il.debugOrigin : instance.getModuleNameAttr().getAttr(),
+      parentScope);
   // The source-level type name and its parameters ride on the instance, which
   // inlining erases. Carry them onto the scope, so that the debug info of an
   // inlined instance still says which source type it came from.

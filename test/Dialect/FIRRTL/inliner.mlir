@@ -3865,3 +3865,35 @@ firrtl.circuit "InlineDbgModuleInfoNested" {
   }
 }
 
+
+// -----
+
+// Dedup merged B into A and kept B's debug info, tagged with `dbg.origin`.
+// Inlining an instance takes only the debug info of the module it stood for.
+
+// CHECK-LABEL: firrtl.circuit "InlineDbgOrigin"
+firrtl.circuit "InlineDbgOrigin" {
+  firrtl.module private @A() attributes {
+      annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    %wire = firrtl.wire : !firrtl.uint<1>
+    dbg.variable "alpha", %wire : !firrtl.uint<1>
+    dbg.variable "beta", %wire {dbg.origin = "B"} : !firrtl.uint<1>
+    %0 = dbg.scope "inner", "Inner" {dbg.origin = "B"}
+    dbg.variable "gamma", %wire scope %0 : !firrtl.uint<1>
+  }
+  // CHECK: firrtl.module @InlineDbgOrigin
+  firrtl.module @InlineDbgOrigin() {
+    // CHECK:      [[SCOPE_A:%.+]] = dbg.scope "a", "A"
+    // CHECK-NEXT: firrtl.wire
+    // CHECK-NEXT: dbg.variable "alpha", {{%.+}} scope [[SCOPE_A]]
+    // CHECK-NOT:  dbg.
+    // CHECK:      [[SCOPE_B:%.+]] = dbg.scope "b", "B"
+    // CHECK-NEXT: firrtl.wire
+    // CHECK-NEXT: dbg.variable "beta", {{%.+}} scope [[SCOPE_B]] :
+    // CHECK-NEXT: [[INNER:%.+]] = dbg.scope "inner", "Inner" scope [[SCOPE_B]]
+    // CHECK-NEXT: dbg.variable "gamma", {{%.+}} scope [[INNER]]
+    // CHECK-NOT:  dbg.origin
+    firrtl.instance a @A()
+    firrtl.instance b {dbg.origin = "B"} @A()
+  }
+}
