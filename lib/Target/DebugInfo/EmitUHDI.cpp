@@ -18,6 +18,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LocationUtils.h"
+#include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/SV/SVOps.h"
@@ -28,6 +29,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Path.h"
 
@@ -831,16 +833,21 @@ private:
 // Constant values
 //===----------------------------------------------------------------------===//
 
+static Object renderBits(const llvm::APInt &val);
+
 /// Render a hw.constant: `constant` for <=63-bit values (cap at 63 so the
 /// cast to int64_t never sign-flips), `bitVector` otherwise. Width is
 /// implicit in the variable's typeRef.
 static Object renderConstant(const llvm::APInt &val) {
+  if (val.getActiveBits() <= 63)
+    return Object{{"constant", static_cast<int64_t>(val.getZExtValue())}};
+  return renderBits(val);
+}
+
+/// Render a hw.constant as `bitVector`, all of its bits, so the width shows.
+static Object renderBits(const llvm::APInt &val) {
   Object lit;
   unsigned bw = val.getBitWidth();
-  if (val.getActiveBits() <= 63) {
-    lit["constant"] = static_cast<int64_t>(val.getZExtValue());
-    return lit;
-  }
   llvm::SmallString<128> bits;
   val.toString(bits, /*Radix=*/2, /*Signed=*/false,
                /*formatAsCLiteral=*/false, /*UpperCase=*/false,
@@ -1068,9 +1075,98 @@ const llvm::StringSet<> &UhdiEmitter::instanceNames(hw::HWModuleOp mod) {
 // Value bindings
 //===----------------------------------------------------------------------===//
 
+static std::optional<llvm::json::Value> leafBinding(mlir::Value value,
+                                                    bool exprs);
+
+/// HGLDD's spelling of a combinational op, empty if it has none.
+static StringRef exprOpcode(Operation *op) {
+  return TypeSwitch<Operation *, StringRef>(op)
+      .Case<comb::AndOp>([](auto) { return "&"; })
+      .Case<comb::OrOp>([](auto) { return "|"; })
+      .Case<comb::XorOp, comb::ParityOp>([](auto) { return "^"; })
+      .Case<comb::AddOp>([](auto) { return "+"; })
+      .Case<comb::SubOp>([](auto) { return "-"; })
+      .Case<comb::MulOp>([](auto) { return "*"; })
+      .Case<comb::DivUOp, comb::DivSOp>([](auto) { return "/"; })
+      .Case<comb::ModUOp, comb::ModSOp>([](auto) { return "%"; })
+      .Case<comb::ShlOp>([](auto) { return "<<"; })
+      .Case<comb::ShrUOp>([](auto) { return ">>"; })
+      .Case<comb::ShrSOp>([](auto) { return ">>>"; })
+      .Case<comb::ConcatOp>([](auto) { return "{}"; })
+      .Case<comb::ReplicateOp>([](auto) { return "R{}"; })
+      .Case<comb::ExtractOp>([](auto) { return "[]"; })
+      .Case<comb::MuxOp>([](auto) { return "?:"; })
+      .Case<comb::ICmpOp>([](auto cmpOp) -> StringRef {
+        switch (cmpOp.getPredicate()) {
+        case comb::ICmpPredicate::eq:
+          return "==";
+        case comb::ICmpPredicate::ne:
+          return "!=";
+        case comb::ICmpPredicate::ceq:
+          return "===";
+        case comb::ICmpPredicate::cne:
+          return "!==";
+        case comb::ICmpPredicate::weq:
+          return "==?";
+        case comb::ICmpPredicate::wne:
+          return "!=?";
+        case comb::ICmpPredicate::ult:
+        case comb::ICmpPredicate::slt:
+          return "<";
+        case comb::ICmpPredicate::ugt:
+        case comb::ICmpPredicate::sgt:
+          return ">";
+        case comb::ICmpPredicate::ule:
+        case comb::ICmpPredicate::sle:
+          return "<=";
+        case comb::ICmpPredicate::uge:
+        case comb::ICmpPredicate::sge:
+          return ">=";
+        }
+        return {};
+      })
+      .Default([](auto) { return ""; });
+}
+
+/// A value that no signal carries, as the combinational op over signals and
+/// literals that computes it: `{$op, args}`, with a `$` so that it never reads
+/// as a struct member. `R{}` takes the count first and `[]` takes the high and
+/// low bit last, as plain numbers.
+static std::optional<llvm::json::Value> exprBinding(mlir::Value value) {
+  auto *op = value.getDefiningOp();
+  if (!op)
+    return std::nullopt;
+  StringRef opcode = exprOpcode(op);
+  if (opcode.empty())
+    return std::nullopt;
+  Array args;
+  if (auto rep = dyn_cast<comb::ReplicateOp>(op))
+    args.push_back(static_cast<int64_t>(rep.getMultiple()));
+  for (auto operand : op->getOperands()) {
+    // Nothing else gives a literal operand its width.
+    if (auto constant = operand.getDefiningOp<hw::ConstantOp>()) {
+      args.push_back(renderBits(constant.getValue()));
+      continue;
+    }
+    auto arg = leafBinding(operand, /*exprs=*/true);
+    if (!arg)
+      return std::nullopt;
+    args.push_back(std::move(*arg));
+  }
+  if (auto extract = dyn_cast<comb::ExtractOp>(op)) {
+    unsigned low = extract.getLowBit();
+    args.push_back(static_cast<int64_t>(
+        low + extract.getType().getIntOrFloatBitWidth() - 1));
+    args.push_back(static_cast<int64_t>(low));
+  }
+  return llvm::json::Value(Object{{"$op", opcode}, {"args", std::move(args)}});
+}
+
 /// Simulation-side binding of a leaf: the signal it lowered to, or the literal
-/// it was folded into. A value tied to neither has no binding at all.
-static std::optional<llvm::json::Value> leafBinding(mlir::Value value) {
+/// it was folded into. With `exprs`, a value tied to neither can still be an
+/// expression over them; else it has no binding at all.
+static std::optional<llvm::json::Value> leafBinding(mlir::Value value,
+                                                    bool exprs) {
   mlir::Value hwVal = unwrapToHwValue(value);
   if (auto vname = resolveBundleFieldName(hwVal))
     return llvm::json::Value(vname.getValue().str());
@@ -1078,6 +1174,8 @@ static std::optional<llvm::json::Value> leafBinding(mlir::Value value) {
       opR && isa<hw::ConstantOp>(opR.getOwner()))
     return llvm::json::Value(
         renderConstant(cast<hw::ConstantOp>(opR.getOwner()).getValue()));
+  if (exprs)
+    return exprBinding(hwVal);
   return std::nullopt;
 }
 
@@ -1107,7 +1205,7 @@ void UhdiEmitter::walkAggregate(mlir::Value aggregate, const Twine &prefix,
       walkAggregate(inner, path, out, scope);
       return;
     }
-    if (auto binding = leafBinding(inner)) {
+    if (auto binding = leafBinding(inner, options.format == 2)) {
       noteLeafSignal(*binding, scope);
       out[path] = std::move(*binding);
     }
@@ -1136,7 +1234,7 @@ UhdiEmitter::memberBinding(mlir::Value field, ScopeRecord &scope) {
       return std::nullopt;
     return llvm::json::Value(std::move(members));
   }
-  auto binding = leafBinding(inner);
+  auto binding = leafBinding(inner, options.format == 2);
   if (binding)
     noteLeafSignal(*binding, scope);
   return binding;
@@ -1284,6 +1382,8 @@ VarRecord UhdiEmitter::collectVariable(debug::VariableOp var, EmitState &s,
           Object{{"signal", rec.scalarSignal}, {"loc", std::move(*hdlLoc)}});
     else
       rec.target = llvm::json::Value(rec.scalarSignal);
+  } else if (options.format == 2) {
+    rec.target = exprBinding(unwrapToHwValue(rootVal));
   }
   return rec;
 }
@@ -1694,12 +1794,29 @@ static llvm::json::Value leafValue(const llvm::json::Value &binding) {
     return Object{{"$const", *c}};
   if (auto b = o.getString("bitVector"))
     return Object{{"$const", ("0b" + *b).str()}};
+  if (auto op = o.getString("$op")) {
+    Array args;
+    for (auto &arg : *o.getArray("args"))
+      args.push_back(arg.getAsInteger() ? arg : leafValue(arg));
+    return Object{{"$op", *op}, {"args", std::move(args)}};
+  }
   return binding;
+}
+
+/// Whether a layout-2 value holds an expression anywhere inside.
+static bool hasExpr(const llvm::json::Value &value) {
+  if (auto *arr = value.getAsArray())
+    return llvm::any_of(*arr, hasExpr);
+  if (auto *obj = value.getAsObject())
+    return obj->get("$op") ||
+           llvm::any_of(*obj, [](auto &kv) { return hasExpr(kv.second); });
+  return false;
 }
 
 static bool isLeafBinding(const llvm::json::Value &binding) {
   const Object *o = binding.getAsObject();
-  return !o || o->get("signal") || o->get("constant") || o->get("bitVector");
+  return !o || o->get("signal") || o->get("constant") || o->get("bitVector") ||
+         o->get("$op");
 }
 
 /// Rebuild the value of an aggregate from the dotted-path map of layout 1,
@@ -2028,10 +2145,17 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
   for (auto &path : verilogFiles.ordered)
     files.push_back(Object{{"path", path}, {"target", true}});
 
+  Array profiles{"x-chisel"};
+  if (llvm::any_of(bindings, [](auto &binding) {
+        return llvm::any_of(binding.vars,
+                            [](auto &kv) { return hasExpr(kv.second); });
+      }))
+    profiles.push_back("expr");
+
   j.object([&] {
     j.attribute("uhdi", kFormatVersion2);
     j.attribute("producer", "firtool");
-    j.attribute("profiles", Array{"x-chisel"});
+    j.attribute("profiles", std::move(profiles));
     j.attribute("files", std::move(files));
     j.attribute("types", layoutTypes(pool));
     j.attributeObject("source", [&] {

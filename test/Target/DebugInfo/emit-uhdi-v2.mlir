@@ -17,7 +17,7 @@ hw.module.extern @Ext(in %a : i8)
 hw.module @Child(in %a : i8, in %op : i2, out b : i8) {
   %enum = dbg.enum %op, "Op", {Add = 0 : i2, Sub = 1 : i2} fqn "pkg.Op" : i2
   %op_v = dbg.value %enum typeName "IO[Op]" : !dbg.enum
-  %0 = comb.xor %a, %a : i8
+  %0 = hw.bitcast %a : (i8) -> i8
   %vec = dbg.array [%a, %0] : i8
   %io = dbg.struct {"a": %a, "op": %op_v, "v": %vec} : i8, !dbg.value, !dbg.array<i8>
   %io_v = dbg.value %io typeName "IO[Bundle]" : !dbg.struct<i8, !dbg.value, !dbg.array<i8>>
