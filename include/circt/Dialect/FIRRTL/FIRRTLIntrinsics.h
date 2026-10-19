@@ -195,7 +195,7 @@ using DebugLeafMap =
 /// single SSA value. Built once per module by `liftDebugIntrinsics`.
 struct NamedDeclIndex {
   llvm::DenseMap<mlir::StringAttr, llvm::SmallVector<mlir::Value, 1>> byName;
-  llvm::DenseSet<mlir::StringAttr> memoryNames;
+  llvm::DenseMap<mlir::StringAttr, mlir::Operation *> memories;
 };
 
 /// Per-invocation context for `IntrinsicLowerings::lower`. Non-owning;

@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/Emit/EmitOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
@@ -849,6 +850,8 @@ class LowerXMRPass : public circt::firrtl::impl::LowerXMRBase<LowerXMRPass> {
             mem.getNameKind(), mem.getAnnotations(),
             builder.getArrayAttr(portAnnotations), mem.getInnerSymAttr(),
             mem.getInitAttr(), mem.getPrefixAttr());
+        if (auto var = mem->getAttr(debug::kDbgMemoryAttr))
+          newMem->setAttr(debug::kDbgMemoryAttr, var);
         for (const auto &res : llvm::enumerate(oldResults))
           res.value().replaceAllUsesWith(newMem.getResult(res.index()));
         mem.erase();

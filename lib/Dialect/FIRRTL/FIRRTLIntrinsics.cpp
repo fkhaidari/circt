@@ -1207,7 +1207,8 @@ public:
 
     LeafMetaMap leafMap = collectLeafMeta(ctx.debugLeaves, varName);
 
-    auto root = resolveRootSignal(gi, adaptor, ctx, varName, rewriter);
+    auto root = resolveRootSignal(gi, adaptor, ctx, varName, typeName, params,
+                                  rewriter);
     if (failed(root))
       return failure();
     Value rawSignal = *root;
@@ -1285,26 +1286,29 @@ private:
   /// Locates the SSA root to walk: the direct operand, or (for 0-operand vars)
   /// a port/wire/reg named `varName` from the staged declaration index. Returns
   /// null and erases the op for the no-SSA cases that are not errors (memory,
-  /// unresolved name); the caller then returns early. An ambiguous name is a
-  /// diagnosed error and returns failure with the op left in place.
+  /// unresolved name); the caller then returns early. A memory keeps the
+  /// variable as `dbg.memory` on its op. An ambiguous name is a diagnosed
+  /// error and returns failure with the op left in place.
   ///
   /// Name lookup assumes this runs BEFORE LowerTypes/PrettifyVerilogNames,
   /// which rewrite port/wire names. Re-ordering passes breaks it silently.
-  static FailureOr<Value> resolveRootSignal(GenericIntrinsic gi,
-                                            GenericIntrinsicOpAdaptor adaptor,
-                                            IntrinsicConvertContext ctx,
-                                            StringAttr varName,
-                                            PatternRewriter &rewriter) {
+  static FailureOr<Value>
+  resolveRootSignal(GenericIntrinsic gi, GenericIntrinsicOpAdaptor adaptor,
+                    IntrinsicConvertContext ctx, StringAttr varName,
+                    StringAttr typeName, ArrayAttr params,
+                    PatternRewriter &rewriter) {
     if (!adaptor.getOperands().empty())
       return adaptor.getOperands()[0];
 
+    Operation *memory = nullptr;
     bool isMemory = false;
     if (ctx.namedDecls && varName) {
       ArrayRef<Value> candidates;
       if (auto it = ctx.namedDecls->byName.find(varName);
           it != ctx.namedDecls->byName.end())
         candidates = it->second;
-      isMemory = ctx.namedDecls->memoryNames.contains(varName);
+      memory = ctx.namedDecls->memories.lookup(varName);
+      isMemory = memory;
 
       size_t totalMatches = candidates.size() + (isMemory ? 1 : 0);
       if (totalMatches > 1) {
@@ -1317,9 +1321,18 @@ private:
         return candidates[0];
     }
 
-    // A memory has no single SSA root; drop the var silently. Anything else
-    // unresolved warns.
-    if (varName && !isMemory)
+    // A memory has no single SSA root; its op carries the var instead.
+    // Anything else unresolved warns.
+    if (memory) {
+      SmallVector<NamedAttribute> fields{
+          rewriter.getNamedAttr("name", varName)};
+      if (typeName)
+        fields.push_back(rewriter.getNamedAttr("typeName", typeName));
+      if (params)
+        fields.push_back(rewriter.getNamedAttr("params", params));
+      memory->setAttr(debug::kDbgMemoryAttr,
+                      rewriter.getDictionaryAttr(fields));
+    } else if (varName)
       gi.op->emitWarning("circt_debug_var: no wire, port, or register named '")
           << varName.getValue() << "' found";
     rewriter.eraseOp(gi.op);
@@ -1689,7 +1702,7 @@ LogicalResult liftDebugIntrinsics(FModuleOp mod, DebugLeafMap &outLeaves,
         })
         .Case<chirrtl::CombMemOp, chirrtl::SeqMemOp, MemOp>([&](auto mem) {
           if (auto nameAttr = mem->template getAttrOfType<StringAttr>("name"))
-            outDecls.memoryNames.insert(nameAttr);
+            outDecls.memories[nameAttr] = mem;
         });
   });
 
@@ -1704,7 +1717,7 @@ LogicalResult liftDebugIntrinsics(FModuleOp mod, DebugLeafMap &outLeaves,
   if (hadError) {
     outLeaves.clear();
     outDecls.byName.clear();
-    outDecls.memoryNames.clear();
+    outDecls.memories.clear();
     return failure();
   }
 

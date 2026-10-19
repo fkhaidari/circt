@@ -431,9 +431,10 @@ public:
   /// `hw.array` / `hw.struct` so aggregate ports don't silently collapse
   /// to a `uint0` placeholder. Truly opaque types still fall back to
   /// `uint<0>` but surface a warning at `warnLoc` so the corruption is
-  /// at least audible.
+  /// at least audible. `nameHint` names a top-level array.
   std::string internType(mlir::Type type, mlir::Location warnLoc,
-                         SourceType src = {}, StringRef ground = {}) {
+                         SourceType src = {}, StringRef ground = {},
+                         StringRef nameHint = {}) {
     if (auto i = dyn_cast<IntegerType>(type)) {
       if (ground == "clock" && i.getWidth() == 1)
         return internGround("clock", 0, src);
@@ -443,7 +444,7 @@ public:
     if (isa<seq::ClockType>(type))
       return internGround("clock", 0, src);
     if (auto arr = dyn_cast<hw::ArrayType>(type))
-      return internArrayType(arr, warnLoc, src);
+      return internArrayType(arr, warnLoc, src, nameHint);
     if (auto st = dyn_cast<hw::StructType>(type))
       return internStructType(st, warnLoc, src);
     mlir::emitWarning(warnLoc) << "uhdi: unrecognised type " << type
@@ -844,11 +845,11 @@ private:
 
   /// Intern a `hw.array` type directly (port type, no dbg.array wrapper).
   std::string internArrayType(hw::ArrayType type, mlir::Location warnLoc,
-                              SourceType src) {
+                              SourceType src, StringRef nameHint = {}) {
     std::string elemId = internType(type.getElementType(), warnLoc);
     std::string key =
         "array{" + elemId + ':' + std::to_string(type.getNumElements()) + '}';
-    return intern(key, aggregateId({}, "array_", arrayCounter), src, [&] {
+    return intern(key, aggregateId(nameHint, "array_", arrayCounter), src, [&] {
       return Object{{"kind", "vector"},
                     {"elementRef", elemId},
                     {"size", int64_t(type.getNumElements())}};
@@ -975,6 +976,13 @@ struct InstanceRecord {
   Object target;
   /// `target.verilog`: port -> binding, from the instance view.
   Object verilogTarget;
+  /// On the instance of a generated memory module: the source variable the
+  /// memory declares, its `type` placeholder, `loc` and `x-chisel`, and the
+  /// array inside the module that holds its value. Layout 2 only.
+  std::string memoryVar;
+  std::string memoryType;
+  Object memorySource;
+  std::string memoryArray;
 };
 
 /// A `modules[key]` entry or, nested under one, an inline scope.
@@ -1040,6 +1048,7 @@ private:
   void collect(mlir::ModuleOp top);
   void collectModule(hw::HWModuleOp module, EmitState &s);
   void collectInlineScope(debug::ScopeOp scope, EmitState &s);
+  void collectMemoryVar(hw::InstanceOp inst, InstanceRecord &rec, EmitState &s);
   VarRecord collectVariable(debug::VariableOp var, EmitState &s,
                             ScopeRecord &scope);
   void synthesizePortVars(hw::HWModuleOp mod, ScopeRecord &scope,
@@ -1641,8 +1650,55 @@ void UhdiEmitter::collectModule(hw::HWModuleOp module, EmitState &s) {
       rec.target["name"] = vn.getValue().str();
     if (auto loc = s.verilogLoc(inst.getLoc()))
       rec.target["loc"] = std::move(*loc);
+    if (options.format == 2)
+      collectMemoryVar(inst, rec, s);
     scope.instances.push_back(std::move(rec));
   });
+}
+
+/// The variable a memory declares, if `inst` instantiates the module lowering
+/// generated for it. Its value is the array `Memory` inside that module, the
+/// name LowerXMR also relies on; a memory left to an external module has no
+/// array to point at and no variable.
+void UhdiEmitter::collectMemoryVar(hw::InstanceOp inst, InstanceRecord &rec,
+                                   EmitState &s) {
+  auto var = inst->getAttrOfType<DictionaryAttr>(kDbgMemoryAttr);
+  if (!var)
+    return;
+  auto name = var.getAs<StringAttr>("name");
+  auto module = dyn_cast_or_null<hw::HWModuleOp>(
+      SymbolTable::lookupNearestSymbolFrom(inst, inst.getModuleNameAttr()));
+  if (!name || !module)
+    return;
+  sv::RegOp array;
+  module.walk([&](sv::RegOp reg) {
+    if (reg.getName() == "Memory")
+      array = reg;
+  });
+  if (!array)
+    return;
+  auto unpacked =
+      dyn_cast<hw::UnpackedArrayType>(array.getType().getElementType());
+  if (!unpacked)
+    return;
+
+  SourceType src;
+  StringRef binding;
+  if (auto typeName = var.getAs<StringAttr>("typeName"))
+    std::tie(binding, src.name) = splitSourceTypeName(typeName.getValue());
+  src.params = var.getAs<ArrayAttr>("params");
+  rec.memoryVar = name.getValue().str();
+  rec.memoryType = types.internType(
+      hw::ArrayType::get(unpacked.getElementType(), unpacked.getNumElements()),
+      inst.getLoc(), src, /*ground=*/{},
+      (inst->getParentOfType<hw::HWModuleOp>().getName() + "_" + rec.memoryVar)
+          .str());
+  if (auto loc = s.chiselLoc(inst.getLoc()))
+    rec.memorySource["loc"] = std::move(*loc);
+  if (!binding.empty())
+    sourceExt(rec.memorySource)["binding"] = binding.str();
+  auto arrayName = array->getAttrOfType<StringAttr>("hw.verilogName");
+  rec.memoryArray = (arrayName ? arrayName : array.getNameAttr()).str();
 }
 
 void UhdiEmitter::collectInlineScope(debug::ScopeOp scope, EmitState &s) {
@@ -2128,6 +2184,10 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
         scope.op->getAttrOfType<DictionaryAttr>(kDbgOriginsAttr) ||
         scope.source.getObject("x-chisel") ||
         instanceClasses.contains(scope.id) || !scope.childScopes.empty() ||
+        llvm::any_of(scope.instances,
+                     [](const InstanceRecord &inst) {
+                       return !inst.memoryVar.empty();
+                     }) ||
         !llvm::all_of(scope.vars,
                       [](const VarRecord &var) { return var.synthesized; }))
       sourceModules.insert(scope.id);
@@ -2286,13 +2346,36 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     ScopeRecord &scope = scopes[index];
     StringRef target = verilogNames[scope.id];
     for (auto &inst : scope.instances) {
+      auto name = inst.target.getString("name");
+      // A memory is a variable of the module that declares it, held by the
+      // array inside the instance lowering made for it.
+      if (!inst.memoryVar.empty()) {
+        std::string value =
+            (name ? name->str() : inst.as) + "." + inst.memoryArray;
+        for (auto &binding : bindings) {
+          if (binding.target != target || !binding.scope.empty())
+            continue;
+          unsigned n = binding.names[inst.memoryVar]++;
+          std::string key =
+              n == 0 ? inst.memoryVar : (inst.memoryVar + "." + Twine(n)).str();
+          Object v{{"type", types.resolve(inst.memoryType)}};
+          if (auto loc = locTuple(inst.memorySource.getObject("loc")))
+            v["loc"] = std::move(*loc);
+          if (auto *ext = inst.memorySource.getObject("x-chisel"))
+            v["x-chisel"] = Object(*ext);
+          sourceEntry(binding.source)
+              .getObject("vars")
+              ->try_emplace(key, std::move(v));
+          binding.vars[key] = value;
+        }
+        continue;
+      }
       StringRef module = !inst.origin.empty() ? StringRef(inst.origin)
                          : boundModules.contains(inst.moduleRef)
                              ? StringRef(inst.moduleRef)
                              : StringRef();
       if (module.empty())
         continue;
-      auto name = inst.target.getString("name");
       Object value{{"$inst", name ? name->str() : inst.as},
                    {"module", verilogNames.lookup(inst.moduleRef)}};
       for (auto &binding : bindings)

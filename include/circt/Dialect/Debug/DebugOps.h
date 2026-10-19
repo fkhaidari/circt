@@ -61,6 +61,12 @@ inline constexpr llvm::StringLiteral kDbgOriginAttr = "dbg.origin";
 /// to `{moduleinfo, loc}` of that module.
 inline constexpr llvm::StringLiteral kDbgOriginsAttr = "dbg.origins";
 
+/// The source variable a memory declares, as `{name, typeName?, params?}`
+/// from its `circt_debug_var`. A memory has no SSA value for `dbg.variable`
+/// to take, so the record rides on the memory op and follows it down to the
+/// instance of the generated memory module.
+inline constexpr llvm::StringLiteral kDbgMemoryAttr = "dbg.memory";
+
 } // namespace circt::debug
 
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_H

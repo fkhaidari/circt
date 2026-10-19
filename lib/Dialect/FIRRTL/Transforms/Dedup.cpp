@@ -119,6 +119,8 @@ struct StructuralHasherSharedConstants {
         StringAttr::get(context, debug::kDbgOriginsAttr));
     nonessentialAttributes.insert(
         StringAttr::get(context, debug::kDbgOriginAttr));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgMemoryAttr));
     nonessentialAttributes.insert(StringAttr::get(context, "inner_sym"));
     nonessentialAttributes.insert(StringAttr::get(context, "name"));
     nonessentialAttributes.insert(StringAttr::get(context, "portAnnotations"));
@@ -490,6 +492,8 @@ struct Equivalence {
         StringAttr::get(context, debug::kDbgOriginsAttr));
     nonessentialAttributes.insert(
         StringAttr::get(context, debug::kDbgOriginAttr));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgMemoryAttr));
   }
 
   struct ModuleData {

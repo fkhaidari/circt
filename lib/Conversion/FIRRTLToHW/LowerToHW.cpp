@@ -13,6 +13,7 @@
 #include "circt/Conversion/FIRRTLToHW.h"
 #include "circt/Conversion/SVLoweringUtils.h"
 #include "circt/Dialect/Comb/CombOps.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/Emit/EmitOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAnnotations.h"
@@ -3927,6 +3928,8 @@ LogicalResult FIRRTLLowering::visitDecl(MemOp op) {
       builder, memType, memSummary.readLatency, memSummary.writeLatency,
       memSummary.readUnderWrite, memSummary.writeUnderWrite, op.getNameAttr(),
       op.getInnerSymAttr(), memInit, op.getPrefixAttr(), Attribute{});
+  if (auto var = op->getAttr(debug::kDbgMemoryAttr))
+    memDecl->setAttr(debug::kDbgMemoryAttr, var);
 
   if (auto parent = op->getParentOfType<hw::HWModuleOp>()) {
     if (auto file = parent->getAttrOfType<hw::OutputFileAttr>("output_file")) {
