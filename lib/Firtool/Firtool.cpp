@@ -46,6 +46,9 @@ LogicalResult firtool::populatePreprocessTransforms(mlir::PassManager &pm,
       {/*fixupEICGWrapper=*/opt.shouldFixupEICGWrapper()}));
   pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
       firrtl::createLowerIntrinsics());
+  if (opt.shouldCaptureDebugStmts())
+    pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
+        firrtl::createCaptureDebugStmts());
 
   return success();
 }
@@ -867,15 +870,15 @@ circt::firtool::FirtoolOptions::FirtoolOptions()
       probesToSignals(false),
       preserveAggregate(firrtl::PreserveAggregate::None),
       preserveMode(firrtl::PreserveValues::None), enableDebugInfo(false),
-      enableUhdi(false), buildMode(BuildModeRelease), disableLayerSink(false),
-      disableOptimization(false), vbToBV(false), noDedup(false),
-      dedupClasses(true), companionMode(firrtl::CompanionMode::Bind),
-      noViews(false), disableAggressiveMergeConnections(false),
-      lowerMemories(false), blackBoxRootPath(""), replSeqMem(false),
-      replSeqMemFile(""), ignoreReadEnableMem(false),
-      disableRandom(RandomKind::None), outputAnnotationFilename(""),
-      enableAnnotationWarning(false), warnOnTruncation(false),
-      lowerToCore(false), addMuxPragmas(false),
+      enableUhdi(false), captureDebugStmts(false), buildMode(BuildModeRelease),
+      disableLayerSink(false), disableOptimization(false), vbToBV(false),
+      noDedup(false), dedupClasses(true),
+      companionMode(firrtl::CompanionMode::Bind), noViews(false),
+      disableAggressiveMergeConnections(false), lowerMemories(false),
+      blackBoxRootPath(""), replSeqMem(false), replSeqMemFile(""),
+      ignoreReadEnableMem(false), disableRandom(RandomKind::None),
+      outputAnnotationFilename(""), enableAnnotationWarning(false),
+      warnOnTruncation(false), lowerToCore(false), addMuxPragmas(false),
       verificationFlavor(firrtl::VerificationFlavor::None),
       emitSeparateAlwaysBlocks(false),
       addVivadoRAMAddressConflictSynthesisBugWorkaround(false),

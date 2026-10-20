@@ -47,6 +47,7 @@ add_circt_dialect_library(CIRCTFIRRTLTransforms
   LowerTypes.cpp
   LowerXMR.cpp
   MaterializeDebugInfo.cpp
+  CaptureDebugStmts.cpp
   MergeConnections.cpp
   ModuleInliner.cpp
   ModuleSummary.cpp

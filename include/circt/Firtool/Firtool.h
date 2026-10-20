@@ -143,6 +143,7 @@ public:
   bool shouldDedupClasses() const { return dedupClasses; }
   bool shouldEnableDebugInfo() const { return enableDebugInfo; }
   bool shouldEnableUhdi() const { return enableUhdi; }
+  bool shouldCaptureDebugStmts() const { return captureDebugStmts; }
   bool shouldIgnoreReadEnableMemories() const { return ignoreReadEnableMem; }
   bool shouldConvertVecOfBundle() const { return vbToBV; }
   bool shouldStripDebugInfo() const { return stripDebugInfo; }
@@ -232,6 +233,11 @@ public:
 
   FirtoolOptions &setEnableUhdi(bool value) {
     enableUhdi = value;
+    return *this;
+  }
+
+  FirtoolOptions &setCaptureDebugStmts(bool value) {
+    captureDebugStmts = value;
     return *this;
   }
 
@@ -454,6 +460,7 @@ private:
   firrtl::PreserveValues::PreserveMode preserveMode;
   bool enableDebugInfo;
   bool enableUhdi;
+  bool captureDebugStmts;
   BuildMode buildMode;
   bool disableLayerSink;
   bool disableOptimization;

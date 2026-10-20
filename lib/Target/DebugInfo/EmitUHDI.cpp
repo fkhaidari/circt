@@ -985,6 +985,17 @@ struct InstanceRecord {
   std::string memoryArray;
 };
 
+/// A `dbg.stmt`: what the statement says in source terms, and the value of its
+/// guard if it is a `when`. Layout 2 only.
+struct StmtRecord {
+  std::string id;
+  DictionaryAttr info;
+  std::optional<Object> loc;
+  std::optional<llvm::json::Value> guard;
+  /// As on `VarRecord`.
+  StringRef origin;
+};
+
 /// A `modules[key]` entry or, nested under one, an inline scope.
 struct ScopeRecord {
   /// The module's symbol name, which is both the emitted key and what instance
@@ -995,6 +1006,7 @@ struct ScopeRecord {
   Object source;
   Object target;
   SmallVector<VarRecord, 0> vars;
+  SmallVector<StmtRecord, 0> stmts;
   SmallVector<InstanceRecord, 0> instances;
   SmallVector<unsigned> childScopes;
   /// Signals reachable as a leaf of some aggregate variable here.
@@ -1041,7 +1053,7 @@ private:
 
   ScopeRecord &addScope(StringRef id, StringRef kind);
   ScopeRecord *findScope(StringRef id);
-  ScopeRecord *ownerScope(debug::VariableOp var);
+  ScopeRecord *ownerScope(Operation *var, Value scope);
   std::optional<unsigned> containerOf(debug::ScopeOp scope);
   const llvm::StringSet<> &instanceNames(hw::HWModuleOp mod);
 
@@ -1068,7 +1080,7 @@ private:
 
 ScopeRecord &UhdiEmitter::addScope(StringRef id, StringRef kind) {
   scopeIndex[id] = scopes.size();
-  scopes.push_back(ScopeRecord{id.str(), kind, {}, {}, {}, {}, {}, {}});
+  scopes.push_back(ScopeRecord{id.str(), kind, {}, {}, {}, {}, {}, {}, {}});
   return scopes.back();
 }
 
@@ -1079,8 +1091,8 @@ ScopeRecord *UhdiEmitter::findScope(StringRef id) {
 
 /// The scope a variable is filed under: the `dbg.scope` it names, else the
 /// hardware module it sits in.
-ScopeRecord *UhdiEmitter::ownerScope(debug::VariableOp var) {
-  if (auto scope = var.getScope())
+ScopeRecord *UhdiEmitter::ownerScope(Operation *var, Value scope) {
+  if (scope)
     if (auto *def = scope.getDefiningOp())
       if (auto it = scopeOfOp.find(def); it != scopeOfOp.end())
         return &scopes[it->second];
@@ -1770,7 +1782,7 @@ void UhdiEmitter::collect(mlir::ModuleOp top) {
   top.walk([&](debug::VariableOp var) {
     if (isMerged(var, var.getScope()))
       return;
-    ScopeRecord *scope = ownerScope(var);
+    ScopeRecord *scope = ownerScope(var, var.getScope());
     if (!scope)
       return;
     VarRecord rec = collectVariable(var, s, *scope);
@@ -1780,6 +1792,25 @@ void UhdiEmitter::collect(mlir::ModuleOp top) {
         coveredPortsByMod[mod].insert(*rec.portIndex);
     scope->vars.push_back(std::move(rec));
   });
+
+  // Statements, in layout 2. A guard binds like a variable's value: to the
+  // signal that carries it, else to the expression computing it.
+  if (options.format == 2)
+    top.walk([&](debug::StmtOp stmt) {
+      ScopeRecord *scope = ownerScope(stmt, stmt.getScope());
+      if (!scope)
+        return;
+      StmtRecord rec{stmt.getId().str(),
+                     stmt.getInfo(),
+                     s.chiselLoc(stmt.getLoc()),
+                     std::nullopt,
+                     {}};
+      if (auto origin = stmt->getAttrOfType<StringAttr>(kDbgOriginAttr))
+        rec.origin = origin.getValue();
+      if (auto guard = stmt.getGuard())
+        rec.guard = leafBinding(guard, /*exprs=*/true);
+      scope->stmts.push_back(std::move(rec));
+    });
 
   // 4. Synthesized port entries for ports with no dbg.variable coverage.
   for (auto mod : top.getOps<hw::HWModuleOp>())
@@ -2052,6 +2083,8 @@ struct BindingRecord {
       : source(source), target(target), scope(scope) {}
   std::string source, target, scope;
   Object vars;
+  /// `when` id to the value of its guard.
+  Object stmts;
   /// Uses of each variable name, to tell two declarations of one name apart.
   llvm::StringMap<unsigned> names;
 };
@@ -2169,6 +2202,20 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     return leaves;
   };
 
+  // Statements of each source module, from the first scope that binds it:
+  // every scope of one source says the same.
+  std::map<std::string, SmallVector<const StmtRecord *>> sourceStmts;
+  llvm::StringMap<const ScopeRecord *> stmtOwners;
+  auto addStmt = [&](BindingRecord &binding, const StmtRecord &stmt,
+                     const ScopeRecord &scope) {
+    auto [it, inserted] = stmtOwners.try_emplace(binding.source, &scope);
+    if (it->second == &scope)
+      sourceStmts[binding.source].push_back(&stmt);
+    if (stmt.info.get("then"))
+      binding.stmts[stmt.id] =
+          stmt.guard ? leafValue(*stmt.guard, 1) : noValue();
+  };
+
   std::vector<BindingRecord> bindings;
   llvm::StringSet<> boundModules;
   Object targets;
@@ -2233,6 +2280,8 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
         for (auto &var : scope.vars)
           if (!var.dropped)
             addVar(binding, var, leaves);
+        for (auto &stmt : scope.stmts)
+          addStmt(binding, stmt, scope);
         bindings.push_back(std::move(binding));
         for (unsigned child : scope.childScopes)
           addInline(child, target, path, {op.getModuleName().str()});
@@ -2326,6 +2375,10 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
       addVar(bindingOf(var.origin.empty() ? StringRef(scope.id) : var.origin),
              var, leaves);
     }
+    for (auto &stmt : scope.stmts)
+      addStmt(
+          bindingOf(stmt.origin.empty() ? StringRef(scope.id) : stmt.origin),
+          stmt, scope);
     boundModules.insert(scope.id);
     // Every source merged into this module declares what it instantiates.
     SmallVector<std::string> parents;
@@ -2414,6 +2467,88 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
       break;
     }
 
+  // The statements of a source as the tree the `when` blocks make, in source
+  // order: a statement no `when` lists is a root.
+  bool hasStmts = false;
+  for (auto &[name, stmts] : sourceStmts) {
+    llvm::StringMap<const StmtRecord *> byId;
+    llvm::StringSet<> children;
+    for (auto *stmt : stmts) {
+      byId[stmt->id] = stmt;
+      for (StringRef branch : {"then", "else"})
+        if (auto ids = stmt->info.getAs<ArrayAttr>(branch))
+          for (auto id : ids.getAsRange<StringAttr>())
+            children.insert(id.getValue());
+    }
+    auto number = [](const StmtRecord *stmt) {
+      unsigned n = 0;
+      (void)StringRef(stmt->id).drop_front().getAsInteger(10, n);
+      return n;
+    };
+    Object &entry = sourceEntry(name);
+    const Object *vars = entry.getObject("vars");
+    // A statement the frontend gave no source line, such as the clock connect
+    // of an instance, is not one the user wrote. A `when` still guards what it
+    // holds.
+    auto isShown = [](const StmtRecord &stmt) {
+      return stmt.loc || stmt.info.get("then");
+    };
+    std::function<Object(const StmtRecord &)> render =
+        [&](const StmtRecord &stmt) {
+          Object out{{"id", stmt.id}};
+          if (stmt.loc)
+            if (auto at = locTuple(&*stmt.loc))
+              out["loc"] = std::move(*at);
+          for (auto field : stmt.info) {
+            StringRef key = field.getName().getValue();
+            Attribute value = field.getValue();
+            if (auto str = dyn_cast<StringAttr>(value)) {
+              out[key] = str.getValue();
+            } else if (auto ids = dyn_cast<ArrayAttr>(value);
+                       ids && key != "reads") {
+              Array branch;
+              for (auto id : ids.getAsRange<StringAttr>())
+                if (auto *child = byId.lookup(id.getValue());
+                    child && isShown(*child))
+                  branch.push_back(render(*child));
+              out[key] = std::move(branch);
+            } else if (ids) {
+              Array paths;
+              for (auto path : ids.getAsRange<StringAttr>())
+                paths.push_back(path.getValue());
+              out[key] = std::move(paths);
+            } else if (auto num = dyn_cast<IntegerAttr>(value);
+                       num && key == "init") {
+              // A literal takes the width of the register it resets.
+              unsigned width = 0;
+              if (auto var = stmt.info.getAs<StringAttr>("var"))
+                if (auto *v = vars->getObject(var.getValue()))
+                  if (auto type = v->getString("type"))
+                    width = leafWidth(pool, *type);
+              llvm::APInt bits = num.getValue();
+              if (width)
+                bits = num.getType().isSignedInteger()
+                           ? bits.sextOrTrunc(width)
+                           : bits.zextOrTrunc(width);
+              out[key] = leafValue(llvm::json::Value(renderBits(bits)));
+            } else if (num) {
+              out[key] = num.getInt();
+            }
+          }
+          return out;
+        };
+    SmallVector<const StmtRecord *> roots;
+    for (auto *stmt : stmts)
+      if (!children.contains(stmt->id) && isShown(*stmt))
+        roots.push_back(stmt);
+    llvm::sort(roots, [&](auto *a, auto *b) { return number(a) < number(b); });
+    Array tree;
+    for (auto *stmt : roots)
+      tree.push_back(render(*stmt));
+    hasStmts |= !tree.empty();
+    entry["stmts"] = std::move(tree);
+  }
+
   Array files;
   for (auto &path : chiselFiles.ordered)
     files.push_back(Object{{"path", path}});
@@ -2472,10 +2607,17 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
   if (usesChisel)
     profiles.push_back("x-chisel");
   if (llvm::any_of(bindings, [](auto &binding) {
-        return llvm::any_of(binding.vars,
-                            [](auto &kv) { return hasExpr(kv.second); });
+        auto any = [](const Object &values) {
+          return llvm::any_of(values,
+                              [](auto &kv) { return hasExpr(kv.second); });
+        };
+        return any(binding.vars) || any(binding.stmts);
       }))
     profiles.push_back("expr");
+  if (hasStmts) {
+    profiles.push_back("stmt");
+    profiles.push_back("deps");
+  }
 
   j.object([&] {
     j.attribute("uhdi", kFormatVersion2);
@@ -2495,6 +2637,8 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
                      {"vars", std::move(binding.vars)}};
         if (!binding.scope.empty())
           entry["scope"] = binding.scope;
+        if (!binding.stmts.empty())
+          entry["stmts"] = std::move(binding.stmts);
         j.value(std::move(entry));
       }
     });

@@ -182,4 +182,33 @@ def ArrayOp : DebugOp<"array", [Pure, SameTypeOperands]> {
   let hasCustomAssemblyFormat = 1;
 }
 
+
+def StmtOp : DebugOp<"stmt", [AttrSizedOperandSegments]> {
+  let summary = "A source-language statement to be captured in debug info";
+  let description = [{
+    Records one statement of the source module: a declaration, a connect or a
+    conditional block. `id` names the statement uniquely in its module. `info`
+    holds what the statement says in source terms: its `kind`, the variable it
+    declares or drives, the variables it reads and, for a conditional block,
+    the ids of the statements in its `then` and `else` branches. The op's
+    location is the statement's source location.
+
+    A conditional block takes the value of its condition as `guard`. Like the
+    value of a `dbg.variable`, the guard follows its value through lowering,
+    so the debug info can say which hardware value enables the block.
+
+    See the `dbg.scope` operation for how to use the `scope` operand.
+  }];
+  let arguments = (ins
+    StrAttr:$id,
+    DictionaryAttr:$info,
+    Optional<AnyType>:$guard,
+    Optional<ScopeType>:$scope
+  );
+  let assemblyFormat = [{
+    $id `,` $info (`guard` $guard^ `:` type($guard))? (`scope` $scope^)?
+        attr-dict
+  }];
+}
+
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_TD

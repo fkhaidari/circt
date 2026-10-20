@@ -1660,7 +1660,7 @@ private:
     builder.setInsertionPoint(&toBlock, toIt);
     auto *op = builder.clone(fromOp, mapping);
 
-    bool isRoot = isa<debug::VariableOp>(op);
+    bool isRoot = isa<debug::VariableOp, debug::StmtOp>(op);
     if (auto scope = dyn_cast<debug::ScopeOp>(op))
       isRoot = !scope.getScope();
     if (isRoot && !op->hasAttr(debug::kDbgOriginAttr))

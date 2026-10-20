@@ -1621,6 +1621,8 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
     return updateDebugScope(varOp), false;
   if (auto scopeOp = dyn_cast<debug::ScopeOp>(op))
     return updateDebugScope(scopeOp), false;
+  if (auto stmtOp = dyn_cast<debug::StmtOp>(op))
+    return updateDebugScope(stmtOp), false;
 
   // Prefix the "name" attribute, when present.
   if (auto nameAttr = op->getAttrOfType<StringAttr>("name"))
@@ -2098,6 +2100,8 @@ bool Inliner::isForeignDebugOp(Operation &op, InliningLevel &il) {
     isRoot = !varOp.getScope();
   else if (auto scopeOp = dyn_cast<debug::ScopeOp>(op))
     isRoot = !scopeOp.getScope();
+  else if (auto stmtOp = dyn_cast<debug::StmtOp>(op))
+    isRoot = !stmtOp.getScope();
   bool foreign = (isRoot && op.getAttrOfType<StringAttr>(
                                 debug::kDbgOriginAttr) != il.debugOrigin) ||
                  llvm::any_of(op.getOperands(), [&](Value operand) {

@@ -280,6 +280,11 @@ static cl::opt<unsigned>
                         "(source/target/bindings)"),
                cl::init(1), cl::value_desc("version"), cl::cat(mainCategory));
 
+static cl::opt<bool> uhdiStmts(
+    "uhdi-stmts",
+    cl::desc("Record source statements in UHDI (profiles stmt and deps)"),
+    cl::init(false), cl::cat(mainCategory));
+
 static cl::opt<std::string>
     uhdiOutputFile("uhdi-output-file",
                    cl::desc("Required output path for UHDI JSON "
@@ -1045,6 +1050,7 @@ int main(int argc, char **argv) {
   // not lib/Firtool's clOptions, so wire it through manually.
   firtool::FirtoolOptions firtoolOptions;
   firtoolOptions.setEnableUhdi(emitUHDI);
+  firtoolOptions.setCaptureDebugStmts(emitUHDI && uhdiStmts);
 
   // Do the guts of the firtool process.
   auto result = executeFirtool(context, firtoolOptions);

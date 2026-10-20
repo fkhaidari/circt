@@ -824,6 +824,24 @@ def MaterializeDebugInfo :
   let dependentDialects = ["debug::DebugDialect"];
 }
 
+def CaptureDebugStmts :
+    Pass<"firrtl-capture-debug-stmts", "firrtl::FModuleOp"> {
+  let summary = "Record the statements of a module in debug ops";
+  let description = [{
+    This pass creates a `dbg.stmt` op for each declaration, named node, connect
+    and `when` of a module that has a source location, before
+    `firrtl-expand-whens` folds the `when` blocks into muxes. Each op records
+    the variables the statement declares, drives and reads, by the names the
+    module's `dbg.variable` ops give them. A `when` additionally keeps its
+    condition as SSA value, so its hardware counterpart can be found after
+    lowering.
+
+    The pass expects `dbg.variable` ops from the frontend's debug intrinsics,
+    so it runs after `firrtl-lower-intrinsics`.
+  }];
+  let dependentDialects = ["debug::DebugDialect"];
+}
+
 def LinkCircuits : Pass<"firrtl-link-circuits", "mlir::ModuleOp"> {
   let summary = "Links multiple circuits into a single one";
   let description = [{
