@@ -87,7 +87,7 @@ firrtl.circuit "BundleEnumFieldTest" {
     firrtl.int.generic "circt_debug_subfield"
       <name: none = "io.state", typeName: none = "UInt", parent: none = "io",
        enumTypeName: none = "MyState", enumFqn: none = "pkg.MyState$",
-       variants: none = "[{\"name\":\"Idle\",\"value\":\"0\"},{\"name\":\"Run\",\"value\":\"1\"}]">
+       variant_Idle: i32 = 0, variant_Run: i32 = 1>
       %io : (!firrtl.bundle<state: uint<2>, data: uint<8>>) -> ()
 
     // Leaf io.data without enum
@@ -135,7 +135,7 @@ firrtl.circuit "BundleFEnumFieldTest" {
     firrtl.int.generic "circt_debug_subfield"
       <name: none = "io.state", typeName: none = "UInt", parent: none = "io",
        enumTypeName: none = "MyState", enumFqn: none = "pkg.MyState$",
-       variants: none = "[{\"name\":\"Idle\",\"value\":\"0\"},{\"name\":\"Run\",\"value\":\"1\"}]">
+       variant_Idle: i32 = 0, variant_Run: i32 = 1>
       %io : (!firrtl.bundle<state: enum<Idle: uint<0>, Run: uint<0>>, data: uint<8>>) -> ()
 
     // CHECK-NOT: dbg.variable "data"
@@ -634,7 +634,7 @@ firrtl.circuit "EnumWithWidth" {
       <name: none = "e", typeName: none = "AluOp",
        enumTypeName: none = "AluOp", enumFqn: none = "pkg.AluOp$",
        width: i64 = 2,
-       variants: none = "[{\"name\":\"ADD\",\"value\":\"0\"},{\"name\":\"SUB\",\"value\":\"1\"},{\"name\":\"AND\",\"value\":\"2\"},{\"name\":\"OR\",\"value\":\"3\"}]">
+       variant_ADD: i32 = 0, variant_SUB: i32 = 1, variant_AND: i32 = 2, variant_OR: i32 = 3>
       %e : (!firrtl.uint<2>) -> ()
   }
 }
@@ -652,7 +652,7 @@ firrtl.circuit "EnumWideVariantTest" {
       <name: none = "e", typeName: none = "WideEnum",
        enumTypeName: none = "WideEnum", enumFqn: none = "pkg.WideEnum$",
        width: i64 = 64,
-       variants: none = "[{\"name\":\"ZERO\",\"value\":\"0\"},{\"name\":\"TOP\",\"value\":\"9223372036854775808\"}]">
+       variant_ZERO: i32 = 0, variant_TOP: i65 = 9223372036854775808>
       %e : (!firrtl.uint<64>) -> ()
   }
 }

@@ -965,85 +965,72 @@ LogicalResult parseEnumWidth(GenericIntrinsic gi, GenericIntrinsicOp op,
   return success();
 }
 
-/// Parses the `variants` JSON array into a name->value DictionaryAttr.
-LogicalResult parseEnumVariants(const llvm::json::Array &arr,
-                                GenericIntrinsicOp op, MLIRContext *ctx,
-                                unsigned variantWidth,
-                                DictionaryAttr &outVariantsMap) {
+/// Prefix of the parameters that carry the variants of an enum, one per
+/// variant: `variant_<name> = <value>`.
+static constexpr llvm::StringLiteral kVariantParamPrefix = "variant_";
+
+static bool isVariantParam(Attribute attr) {
+  return cast<ParamDeclAttr>(attr).getName().getValue().starts_with(
+      kVariantParamPrefix);
+}
+
+/// Reads the inline enum variants (`variant_<name>` params + optional `width`)
+/// off a `circt_debug_var`/`circt_debug_subfield` into a name->value
+/// `variantsMap`. Leaves `outVariantsMap` null when the node carries no
+/// variant params (i.e. it is not an enum). Fails on malformed data.
+LogicalResult parseInlineEnumVariants(GenericIntrinsic gi,
+                                      GenericIntrinsicOp op, MLIRContext *ctx,
+                                      DictionaryAttr &outVariantsMap) {
+  if (gi.getParamByName("variants"))
+    return op.emitError("debug enum: pass the variants as one "
+                        "'variant_<name>' parameter each, not as 'variants'");
+  auto params = op.getParameters().getAsRange<ParamDeclAttr>();
+  if (llvm::none_of(op.getParameters(), isVariantParam))
+    return success();
+
+  unsigned variantWidth;
+  if (failed(parseEnumWidth(gi, op, variantWidth)))
+    return failure();
+
   auto variantIntType = IntegerType::get(ctx, variantWidth);
   SmallVector<NamedAttribute> variants;
   // `variantsMap` is built as a DictionaryAttr, which silently collapses
   // duplicate keys; reject duplicate variant names up front so two source
   // variants cannot merge into one.
   llvm::SmallDenseSet<StringRef> seenNames;
-  for (const auto &item : arr) {
-    auto *obj = item.getAsObject();
-    if (!obj)
-      return op.emitError("debug enum: variant entry is not a JSON object");
-
-    auto varNameOpt = obj->getString("name");
-    if (!varNameOpt)
-      return op.emitError("debug enum: variant is missing 'name'");
-    if (!seenNames.insert(*varNameOpt).second)
+  for (auto param : params) {
+    StringRef name = param.getName().getValue();
+    if (!name.consume_front(kVariantParamPrefix))
+      continue;
+    if (name.empty())
+      return op.emitError("debug enum: variant parameter '")
+             << param.getName().getValue() << "' names no variant";
+    if (!seenNames.insert(name).second)
       return op.emitError("debug enum: duplicate variant name '")
-             << *varNameOpt << "'";
-
-    // Frontend emits value as a string; tolerate integers for tests.
-    APInt valAP;
-    if (auto s = obj->getString("value")) {
-      if (StringRef(*s).getAsInteger(10, valAP))
-        return op.emitError("debug enum: variant '")
-               << *varNameOpt << "' has non-integer value '" << *s << "'";
-    } else if (auto i = obj->getInteger("value")) {
-      valAP = APInt(64, static_cast<uint64_t>(*i), /*isSigned=*/true);
-    } else {
+             << name << "'";
+    auto value = dyn_cast<IntegerAttr>(param.getValue());
+    if (!value)
       return op.emitError("debug enum: variant '")
-             << *varNameOpt << "' is missing 'value'";
-    }
+             << name << "' has a non-integer value";
 
     // A value that does not fit `width` is an error, not a warning: truncating
     // it can collapse two variants to the same tag and mislabel debug output.
+    const APInt &valAP = value.getValue();
+    bool isSigned = value.getType().isSignedInteger();
     unsigned checkWidth = std::max(variantWidth + 1, valAP.getBitWidth());
-    if (!valAP.zextOrTrunc(checkWidth).isIntN(variantWidth))
+    if ((isSigned && valAP.isNegative()) ||
+        !valAP.zextOrTrunc(checkWidth).isIntN(variantWidth))
       return op.emitError("debug enum: variant '")
-             << *varNameOpt << "' value "
-             << llvm::toString(valAP, 10, /*Signed=*/false)
+             << name << "' value " << llvm::toString(valAP, 10, isSigned)
              << " does not fit in " << variantWidth << " bits";
 
     variants.push_back(
-        {StringAttr::get(ctx, *varNameOpt),
+        {StringAttr::get(ctx, name),
          IntegerAttr::get(variantIntType, valAP.zextOrTrunc(variantWidth))});
   }
 
   outVariantsMap = DictionaryAttr::get(ctx, variants);
   return success();
-}
-
-/// Reads inline enum metadata (`variants` JSON + optional `width`) off a
-/// `circt_debug_var`/`circt_debug_subfield` and parses it into a name->value
-/// `variantsMap`. Leaves `outVariantsMap` null when the node carries no
-/// `variants` param (i.e. it is not an enum). Fails on malformed data.
-LogicalResult parseInlineEnumVariants(GenericIntrinsic gi,
-                                      GenericIntrinsicOp op, MLIRContext *ctx,
-                                      DictionaryAttr &outVariantsMap) {
-  auto variantsStr = gi.getParamValue<StringAttr>("variants");
-  if (!variantsStr)
-    return success();
-
-  auto parsed = llvm::json::parse(variantsStr.strref());
-  if (auto err = parsed.takeError())
-    return op.emitError("debug enum: failed to parse 'variants': ")
-           << llvm::toString(std::move(err));
-
-  auto *arr = parsed->getAsArray();
-  if (!arr)
-    return op.emitError("debug enum: 'variants' is not a JSON array");
-
-  unsigned variantWidth;
-  if (failed(parseEnumWidth(gi, op, variantWidth)))
-    return failure();
-
-  return parseEnumVariants(*arr, op, ctx, variantWidth, outVariantsMap);
 }
 
 class DebugAggregateBuilder {
@@ -1202,8 +1189,9 @@ public:
            gi.namedParam("params", /*optional=*/true) ||
            gi.namedParam("enumFqn", /*optional=*/true) ||
            gi.namedParam("enumTypeName", /*optional=*/true) ||
-           gi.namedParam("variants", /*optional=*/true) ||
-           gi.namedIntParam("width", /*optional=*/true) || gi.hasNParam(2, 5) ||
+           gi.namedIntParam("width", /*optional=*/true) ||
+           gi.hasNParam(
+               2 + llvm::count_if(gi.op.getParameters(), isVariantParam), 4) ||
            gi.hasNoOutput();
   }
 
@@ -1690,7 +1678,7 @@ LogicalResult processSubfieldIntrinsic(GenericIntrinsicOp op,
   if (auto etn = gi.getParamValue<StringAttr>("enumTypeName");
       etn && !etn.getValue().empty())
     fields.push_back({StringAttr::get(ctx, "enumTypeName"), etn});
-  // Parse the inline `variants`/`width` (if any) into a variantsMap, stored on
+  // Parse the inline variants/`width` (if any) into a variantsMap, stored on
   // the leaf for `DebugAggregateBuilder` to build a `dbg.enum` from.
   DictionaryAttr variantsMap;
   if (failed(parseInlineEnumVariants(gi, op, ctx, variantsMap)))

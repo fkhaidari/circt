@@ -15,70 +15,42 @@
 
 // -----
 
-// Unparseable JSON in inline 'variants'.
-firrtl.circuit "EnumBadJSON" {
-  firrtl.module @EnumBadJSON(in %s: !firrtl.uint<2>) {
-    // expected-error @below {{debug enum: failed to parse 'variants'}}
+// A variant parameter whose value is not an integer.
+firrtl.circuit "EnumVariantNotInteger" {
+  firrtl.module @EnumVariantNotInteger(in %s: !firrtl.uint<2>) {
+    // expected-error @below {{debug enum: variant 'A' has a non-integer value}}
     // expected-error @below {{failed to legalize operation 'firrtl.int.generic'}}
     firrtl.int.generic "circt_debug_var"
       <name: none = "s", typeName: none = "MyState", enumFqn: none = "pkg.MyState$",
-       variants: none = "[{not valid json">
+       variant_A: none = "notanint">
       %s : (!firrtl.uint<2>) -> ()
   }
 }
 
 // -----
 
-// Valid JSON that is not an array in 'variants'.
-firrtl.circuit "EnumVariantsNotArray" {
-  firrtl.module @EnumVariantsNotArray(in %s: !firrtl.uint<2>) {
-    // expected-error @below {{debug enum: 'variants' is not a JSON array}}
+// The variants as a single string parameter.
+firrtl.circuit "EnumVariantsString" {
+  firrtl.module @EnumVariantsString(in %s: !firrtl.uint<2>) {
+    // expected-error @below {{debug enum: pass the variants as one 'variant_<name>' parameter each, not as 'variants'}}
     // expected-error @below {{failed to legalize operation 'firrtl.int.generic'}}
     firrtl.int.generic "circt_debug_var"
       <name: none = "s", typeName: none = "MyState", enumFqn: none = "pkg.MyState$",
-       variants: none = "{}">
+       variants: none = "[{\"name\":\"A\",\"value\":\"0\"}]">
       %s : (!firrtl.uint<2>) -> ()
   }
 }
 
 // -----
 
-// Variant with a non-integer string value.
-firrtl.circuit "EnumBadVariantValue" {
-  firrtl.module @EnumBadVariantValue(in %s: !firrtl.uint<2>) {
-    // expected-error @below {{debug enum: variant 'A' has non-integer value 'notanint'}}
+// A variant parameter with nothing after the prefix.
+firrtl.circuit "EnumVariantNoName" {
+  firrtl.module @EnumVariantNoName(in %s: !firrtl.uint<2>) {
+    // expected-error @below {{debug enum: variant parameter 'variant_' names no variant}}
     // expected-error @below {{failed to legalize operation 'firrtl.int.generic'}}
     firrtl.int.generic "circt_debug_var"
       <name: none = "s", typeName: none = "MyState", enumFqn: none = "pkg.MyState$",
-       variants: none = "[{\"name\":\"A\",\"value\":\"notanint\"}]">
-      %s : (!firrtl.uint<2>) -> ()
-  }
-}
-
-// -----
-
-// Variant missing 'name'.
-firrtl.circuit "EnumVariantMissingName" {
-  firrtl.module @EnumVariantMissingName(in %s: !firrtl.uint<2>) {
-    // expected-error @below {{debug enum: variant is missing 'name'}}
-    // expected-error @below {{failed to legalize operation 'firrtl.int.generic'}}
-    firrtl.int.generic "circt_debug_var"
-      <name: none = "s", typeName: none = "MyState", enumFqn: none = "pkg.MyState$",
-       variants: none = "[{\"value\":\"0\"}]">
-      %s : (!firrtl.uint<2>) -> ()
-  }
-}
-
-// -----
-
-// Variant missing 'value'.
-firrtl.circuit "EnumVariantMissingValue" {
-  firrtl.module @EnumVariantMissingValue(in %s: !firrtl.uint<2>) {
-    // expected-error @below {{debug enum: variant 'A' is missing 'value'}}
-    // expected-error @below {{failed to legalize operation 'firrtl.int.generic'}}
-    firrtl.int.generic "circt_debug_var"
-      <name: none = "s", typeName: none = "MyState", enumFqn: none = "pkg.MyState$",
-       variants: none = "[{\"name\":\"A\"}]">
+       variant_: i32 = 0>
       %s : (!firrtl.uint<2>) -> ()
   }
 }
@@ -208,7 +180,7 @@ firrtl.circuit "WideEnumVariant" {
     // expected-error @below {{failed to legalize operation 'firrtl.int.generic'}}
     firrtl.int.generic "circt_debug_var"
       <name: none = "s", typeName: none = "Big", enumFqn: none = "pkg.Big", width: i64 = 70,
-       variants: none = "[{\"name\":\"A\",\"value\":\"75557863725914323419136\"}]">
+       variant_A: i78 = 75557863725914323419136>
       %s : (!firrtl.uint<70>) -> ()
   }
 }
@@ -223,7 +195,7 @@ firrtl.circuit "DupVariantName" {
     // expected-error @below {{failed to legalize operation 'firrtl.int.generic'}}
     firrtl.int.generic "circt_debug_var"
       <name: none = "s", typeName: none = "E", enumFqn: none = "pkg.E", width: i64 = 8,
-       variants: none = "[{\"name\":\"A\",\"value\":\"0\"},{\"name\":\"A\",\"value\":\"1\"}]">
+       variant_A: i32 = 0, variant_A: i32 = 1>
       %s : (!firrtl.uint<8>) -> ()
   }
 }
@@ -238,7 +210,7 @@ firrtl.circuit "EnumWidthTooWide" {
     // expected-error @below {{failed to legalize operation 'firrtl.int.generic'}}
     firrtl.int.generic "circt_debug_var"
       <name: none = "s", typeName: none = "E", enumFqn: none = "pkg.E", width: i128 = 18446744073709551616,
-       variants: none = "[{\"name\":\"A\",\"value\":\"0\"}]">
+       variant_A: i32 = 0>
       %s : (!firrtl.uint<8>) -> ()
   }
 }
