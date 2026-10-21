@@ -249,26 +249,25 @@ static std::optional<unsigned> resolveAsOutputPortId(mlir::Value value) {
   return std::nullopt;
 }
 
-/// Output-id of the `hw.output` operand an input port feeds directly, for the
+static bool sameValue(mlir::Value a, mlir::Value b);
+
+/// Output-id of the `hw.output` operand a value feeds directly, for the
 /// `assign b = a` shape where no wire sits between the two. The input's value
 /// then backs both ports, so the variable's own name decides which one it
-/// describes. Block arguments only, on purpose: a value produced inside the
-/// body carries its own Verilog name, which `resolveAsOutputPortId` and
-/// `sv::resolveVerilogName` resolve already and which names the wire the
-/// waveform actually shows.
+/// describes. An expression that drives the port compares by structure:
+/// ExportVerilog clones it for each user, so the variable reads a copy of the
+/// `hw.output` operand rather than the operand itself.
 static std::optional<unsigned> resolveAsDirectOutputPortId(mlir::Value value,
                                                            StringRef varName,
                                                            hw::HWModuleOp mod) {
   if (varName.empty() || !mod || !value)
     return std::nullopt;
   auto modType = mod.getHWModuleType();
-  for (auto &use : value.getUses()) {
-    if (!isa<hw::OutputOp>(use.getOwner()))
-      continue;
-    unsigned outId = use.getOperandNumber();
-    if (modType.getPortName(modType.getPortIdForOutputId(outId)) == varName)
+  auto out = cast<hw::OutputOp>(mod.getBodyBlock()->getTerminator());
+  for (auto [outId, operand] : llvm::enumerate(out.getOperands()))
+    if (modType.getPortName(modType.getPortIdForOutputId(outId)) == varName &&
+        sameValue(value, operand))
       return outId;
-  }
   return std::nullopt;
 }
 
