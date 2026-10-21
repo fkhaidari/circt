@@ -70,7 +70,7 @@ struct EmitUHDIOptions {
   /// Only emit locations whose files actually exist on disk.
   bool onlyExistingFileLocs = false;
   /// Document layout: 1 nests everything under `modules`; 2 splits it into
-  /// `source` modules, `target` modules and the `bindings` between them.
+  /// `original` modules, `generated` modules and the `bindings` between them.
   unsigned format = 1;
 };
 

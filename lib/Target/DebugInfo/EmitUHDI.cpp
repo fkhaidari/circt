@@ -1961,7 +1961,7 @@ static Object layoutTypes(const Object &pool) {
   return out;
 }
 
-static llvm::json::Value noValue() { return Object{{"$none", "optimized"}}; }
+static llvm::json::Value noValue() { return Object{{"$optimizedOut", true}}; }
 
 /// Bit width of a leaf of pool type `typeId`; an enum has its base's.
 static unsigned leafWidth(const Object &pool, StringRef typeId) {
@@ -2099,12 +2099,12 @@ struct InstanceVar {
   llvm::json::Value value;
 };
 
-/// Layout 2 splits what layout 1 nests under `modules`: `source` describes the
-/// modules as written, keyed by their name before dedup, with each instance a
-/// variable typed by its module; `target` lists the Verilog modules;
-/// `bindings` maps the variables of a source module to signals of a target
-/// module, at the dotted inline path `scope` when it was inlined. A target
-/// that dedup made out of several sources has a binding per source.
+/// Layout 2 splits what layout 1 nests under `modules`: `original` describes
+/// the modules as written, keyed by their name before dedup, with each
+/// instance a variable typed by its module; `generated` lists the Verilog
+/// modules; `bindings` maps the variables of a source module to signals of a
+/// target module, at the dotted inline path `scope` when it was inlined. A
+/// target that dedup made out of several sources has a binding per source.
 void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
   EmitState s = state();
   // Interning grows the source file list, so it has to settle before the
@@ -2252,7 +2252,7 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     }
   }
 
-  // An inline scope binds the module it inlined, at its path in `target`,
+  // An inline scope binds the module it inlined, at its path in `generated`,
   // and is an instance of each source that declares it.
   std::function<void(unsigned, StringRef, const std::string &,
                      ArrayRef<std::string>)>
@@ -2553,7 +2553,7 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
   for (auto &path : chiselFiles.ordered)
     files.push_back(Object{{"path", path}});
   for (auto &path : verilogFiles.ordered)
-    files.push_back(Object{{"path", path}, {"target", true}});
+    files.push_back(Object{{"path", path}, {"generated", true}});
 
   // A port an aggregate covers is dropped after its type was interned, so
   // keep only the types the variables reach.
@@ -2625,15 +2625,15 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     j.attribute("profiles", std::move(profiles));
     j.attribute("files", std::move(files));
     j.attribute("types", std::move(liveTypes));
-    j.attributeObject("source", [&] {
+    j.attributeObject("original", [&] {
       for (auto &[name, entry] : sources)
         j.attribute(name, std::move(entry));
     });
-    j.attribute("target", std::move(targets));
+    j.attribute("generated", std::move(targets));
     j.attributeArray("bindings", [&] {
       for (auto &binding : bindings) {
-        Object entry{{"source", binding.source},
-                     {"target", binding.target},
+        Object entry{{"original", binding.source},
+                     {"generated", binding.target},
                      {"vars", std::move(binding.vars)}};
         if (!binding.scope.empty())
           entry["scope"] = binding.scope;

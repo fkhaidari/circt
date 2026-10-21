@@ -28,7 +28,7 @@ hw.module @Top(in %a : i8, out o : i8) {
 // CHECK-NEXT:     "module": "Mid"
 // CHECK-NEXT:   },
 
-// CHECK:      "source": {
+// CHECK:      "original": {
 // CHECK-NEXT:   "Leaf": {
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "x": {
@@ -53,14 +53,14 @@ hw.module @Top(in %a : i8, out o : i8) {
 // CHECK-NEXT:         "type": "module_Mid"
 // CHECK-NEXT:       },
 
-// CHECK:      "target": {
+// CHECK:      "generated": {
 // CHECK-NEXT:   "Top": {}
 // CHECK-NEXT: },
 
 // CHECK:      "bindings": [
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "source": "Top",
-// CHECK-NEXT:     "target": "Top",
+// CHECK-NEXT:     "generated": "Top",
+// CHECK-NEXT:     "original": "Top",
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "a": "a",
 // CHECK-NEXT:       "m": {
@@ -70,9 +70,9 @@ hw.module @Top(in %a : i8, out o : i8) {
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // CHECK-NEXT:   {
+// CHECK-NEXT:     "generated": "Top",
+// CHECK-NEXT:     "original": "Mid",
 // CHECK-NEXT:     "scope": "m",
-// CHECK-NEXT:     "source": "Mid",
-// CHECK-NEXT:     "target": "Top",
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "h": {
 // CHECK-NEXT:         "$inline": "m.h"
@@ -81,9 +81,9 @@ hw.module @Top(in %a : i8, out o : i8) {
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // CHECK-NEXT:   {
+// CHECK-NEXT:     "generated": "Top",
+// CHECK-NEXT:     "original": "Leaf",
 // CHECK-NEXT:     "scope": "m.h",
-// CHECK-NEXT:     "source": "Leaf",
-// CHECK-NEXT:     "target": "Top",
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "x": "a"
 // CHECK-NEXT:     }

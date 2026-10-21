@@ -52,8 +52,8 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:   },
 
 // Target files follow the source files in the one list.
-// CHECK:            "path": "out.sv",
-// CHECK-NEXT:     "target": true
+// CHECK:            "generated": true,
+// CHECK-NEXT:     "path": "out.sv"
 // CHECK-NEXT:   }
 // CHECK-NEXT: ],
 
@@ -102,7 +102,7 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 
 // The class recorded on the only instance describes the source module. The
 // input ports are leaves of `io` and are not repeated; `b` is.
-// CHECK:      "source": {
+// CHECK:      "original": {
 // CHECK-NEXT:   "Child": {
 // CHECK-NEXT:     "loc": [
 // CHECK-NEXT:       0,
@@ -156,7 +156,7 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:       "typeName": "Top"
 
 // The target lists the Verilog modules only.
-// CHECK:      "target": {
+// CHECK:      "generated": {
 // CHECK-NEXT:   "Child": {
 // CHECK-NEXT:     "file": [[SV:[0-9]+]]
 // CHECK-NEXT:   },
@@ -172,8 +172,8 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // marked as such, in a vector too.
 // CHECK:      "bindings": [
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "source": "Child",
-// CHECK-NEXT:     "target": "Child",
+// CHECK-NEXT:     "generated": "Child",
+// CHECK-NEXT:     "original": "Child",
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "b": "b",
 // CHECK-NEXT:       "io": {
@@ -182,25 +182,25 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:         "v": [
 // CHECK-NEXT:           "a",
 // CHECK-NEXT:           {
-// CHECK-NEXT:             "$none": "optimized"
+// CHECK-NEXT:             "$optimizedOut": true
 // CHECK-NEXT:           }
 // CHECK-NEXT:         ]
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "lost": {
-// CHECK-NEXT:         "$none": "optimized"
+// CHECK-NEXT:         "$optimizedOut": true
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "r": "a"
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "source": "Ext",
-// CHECK-NEXT:     "target": "Ext",
+// CHECK-NEXT:     "generated": "Ext",
+// CHECK-NEXT:     "original": "Ext",
 // CHECK-NEXT:     "vars": {}
 // CHECK-NEXT:   },
 // An instance binds to its Verilog name and the module it instantiates.
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "source": "Top",
-// CHECK-NEXT:     "target": "Top",
+// CHECK-NEXT:     "generated": "Top",
+// CHECK-NEXT:     "original": "Top",
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "a": "a",
 // CHECK-NEXT:       "b": "b",

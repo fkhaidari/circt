@@ -28,7 +28,7 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 }
 
 // The class B claims is left over for A.
-// CHECK:      "source": {
+// CHECK:      "original": {
 // CHECK-NEXT:   "A": {
 // CHECK-NEXT:     "loc": [
 // CHECK-NEXT:       0,
@@ -63,15 +63,15 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 // CHECK:            "ib": {
 // CHECK:              "type": "module_B"
 
-// CHECK:      "target": {
+// CHECK:      "generated": {
 // CHECK-NEXT:   "A": {},
 // CHECK-NEXT:   "Top": {}
 // CHECK-NEXT: },
 
 // CHECK:      "bindings": [
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "source": "A",
-// CHECK-NEXT:     "target": "A",
+// CHECK-NEXT:     "generated": "A",
+// CHECK-NEXT:     "original": "A",
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "alpha": "w",
 // CHECK-NEXT:       "p": "p",
@@ -79,8 +79,8 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "source": "B",
-// CHECK-NEXT:     "target": "A",
+// CHECK-NEXT:     "generated": "A",
+// CHECK-NEXT:     "original": "B",
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "beta": "w",
 // CHECK-NEXT:       "p": "p",
@@ -88,8 +88,8 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "source": "Top",
-// CHECK-NEXT:     "target": "Top",
+// CHECK-NEXT:     "generated": "Top",
+// CHECK-NEXT:     "original": "Top",
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "a": "a",
 // CHECK-NEXT:       "ia": {

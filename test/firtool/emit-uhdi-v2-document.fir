@@ -30,7 +30,7 @@ circuit T :
 ; CHECK-NEXT:     "width": 1
 ; CHECK-NEXT:   }
 ; CHECK-NEXT: },
-; CHECK:      "target": {
+; CHECK:      "generated": {
 ; CHECK-NEXT:   "T": {
 ; CHECK-NEXT:     "file": 0
 ; CHECK-NEXT:   }

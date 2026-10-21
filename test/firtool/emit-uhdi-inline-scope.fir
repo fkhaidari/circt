@@ -77,7 +77,7 @@ circuit Top: %[[
 
 ; Inlining turns Child's ports into plain signals of Top. Their direction was
 ; recorded before that, so the source module still declares its interface.
-; V2:      "source": {
+; V2:      "original": {
 ; V2-NEXT:   "Child": {
 ; V2-NEXT:     "vars": {
 ; V2-NEXT:       "clock": {

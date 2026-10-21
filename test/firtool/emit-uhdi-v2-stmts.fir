@@ -175,25 +175,25 @@ circuit M : %[[{"class": "firrtl.passes.InlineAnnotation", "target": "~M|Inl"}]]
 ; CHECK-NEXT:   ]
 
 ; CHECK-LABEL: "bindings": [
-; CHECK:        "source": "Kid",
+; CHECK:        "generated": "Kid",
+; CHECK-NEXT:   "original": "Kid",
 ; CHECK-NEXT:   "stmts": {
 ; CHECK-NEXT:     "s1": "en"
 ; CHECK-NEXT:   },
-; CHECK-NEXT:   "target": "Kid",
-; CHECK:        "source": "Kid_1",
+; CHECK:        "generated": "Kid",
+; CHECK-NEXT:   "original": "Kid_1",
 ; CHECK-NEXT:   "stmts": {
 ; CHECK-NEXT:     "s1": "en"
 ; CHECK-NEXT:   },
-; CHECK-NEXT:   "target": "Kid",
-; CHECK:        "source": "M",
+; CHECK:        "generated": "M",
+; CHECK-NEXT:   "original": "M",
 ; CHECK-NEXT:   "stmts": {
 ; CHECK-NEXT:     "s5": "sel",
 ; CHECK-NEXT:     "s7": "_GEN"
 ; CHECK-NEXT:   },
-; CHECK-NEXT:   "target": "M",
-; CHECK:        "scope": "i",
-; CHECK-NEXT:   "source": "Inl",
+; CHECK:        "generated": "M",
+; CHECK-NEXT:   "original": "Inl",
+; CHECK-NEXT:   "scope": "i",
 ; CHECK-NEXT:   "stmts": {
 ; CHECK-NEXT:     "s1": "sel"
 ; CHECK-NEXT:   },
-; CHECK-NEXT:   "target": "M",

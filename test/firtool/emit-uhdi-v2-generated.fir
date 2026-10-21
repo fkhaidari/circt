@@ -30,10 +30,10 @@ circuit M :
     connect m.w.mask, UInt<1>(1)
     connect data, m.r.data
 
-; CHECK:      "source": {
+; CHECK:      "original": {
 ; CHECK-NEXT:   "M": {
 ; CHECK-NOT:    "m_
-; CHECK:      "target": {
+; CHECK:      "generated": {
 ; CHECK-NEXT:   "M": {
 ; CHECK-NEXT:     "file": 0
 ; CHECK-NEXT:   },
@@ -43,6 +43,7 @@ circuit M :
 ; CHECK-NEXT: },
 ; CHECK:      "bindings": [
 ; CHECK-NEXT:   {
-; CHECK-NEXT:     "source": "M",
-; CHECK-NOT:    "source"
+; CHECK-NEXT:     "generated": "M",
+; CHECK-NEXT:     "original": "M",
+; CHECK-NOT:    "original"
 ; CHECK:      ]

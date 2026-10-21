@@ -33,7 +33,7 @@ circuit M :
 ; CHECK-NEXT:     "name": "UInt<8>[2]",
 ; CHECK-NEXT:     "size": 2
 ; CHECK-NEXT:   }
-; CHECK:      "source": {
+; CHECK:      "original": {
 ; CHECK-NEXT:   "M": {
 ; CHECK-NEXT:     "vars": {
 ; CHECK:            "mem": {
@@ -49,7 +49,7 @@ circuit M :
 ; CHECK-NEXT:       }
 ; CHECK:      "bindings": [
 ; CHECK-NEXT:   {
-; CHECK-NEXT:     "source": "M",
-; CHECK-NEXT:     "target": "M",
+; CHECK-NEXT:     "generated": "M",
+; CHECK-NEXT:     "original": "M",
 ; CHECK-NEXT:     "vars": {
 ; CHECK:            "mem": "mem_ext.Memory"
