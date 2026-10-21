@@ -2289,8 +2289,11 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     ScopeRecord &scope = scopes[index];
     StringRef target = verilogNames[scope.id];
     Object module;
+    // A module declaration starts its line, and ExportVerilog counts columns
+    // from 0, so only the line is kept.
     if (auto *loc = scope.target.getObject("loc"))
-      module["file"] = *loc->getInteger("file") + offset;
+      if (auto line = loc->getInteger("beginLine"))
+        module["loc"] = Array{*loc->getInteger("file") + offset, *line};
     if (scope.kind == "extmodule") {
       module["kind"] = "extern";
       targets[target] = std::move(module);

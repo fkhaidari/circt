@@ -34,7 +34,10 @@ circuit T :
 ; CHECK-NEXT: ],
 ; CHECK:      "generated": {
 ; CHECK-NEXT:   "T": {
-; CHECK-NEXT:     "file": 0
+; CHECK-NEXT:     "loc": [
+; CHECK-NEXT:       0,
+; CHECK-NEXT:       2
+; CHECK-NEXT:     ]
 ; CHECK-NEXT:   }
 ; CHECK-NEXT: },
 

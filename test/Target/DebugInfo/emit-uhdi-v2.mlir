@@ -165,16 +165,22 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK:          "x-chisel": {
 // CHECK-NEXT:       "typeName": "Top"
 
-// The target lists the Verilog modules only.
+// The target lists the Verilog modules only, each where its declaration is.
 // CHECK:      "generated": {
 // CHECK-NEXT:   "Child": {
-// CHECK-NEXT:     "file": [[SV:[0-9]+]]
+// CHECK-NEXT:     "loc": [
+// CHECK-NEXT:       [[SV:[0-9]+]],
+// CHECK-NEXT:       7
+// CHECK-NEXT:     ]
 // CHECK-NEXT:   },
 // CHECK-NEXT:   "Ext": {
 // CHECK-NEXT:     "kind": "extern"
 // CHECK-NEXT:   },
 // CHECK-NEXT:   "Top": {
-// CHECK-NEXT:     "file": [[SV]]
+// CHECK-NEXT:     "loc": [
+// CHECK-NEXT:       [[SV]],
+// CHECK-NEXT:       12
+// CHECK-NEXT:     ]
 // CHECK-NEXT:   }
 // CHECK-NEXT: },
 

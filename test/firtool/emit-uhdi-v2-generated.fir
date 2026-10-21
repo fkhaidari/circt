@@ -35,10 +35,16 @@ circuit M :
 ; CHECK-NOT:    "m_
 ; CHECK:      "generated": {
 ; CHECK-NEXT:   "M": {
-; CHECK-NEXT:     "file": 0
+; CHECK-NEXT:     "loc": [
+; CHECK-NEXT:       0,
+; CHECK-NEXT:       {{[0-9]+}}
+; CHECK-NEXT:     ]
 ; CHECK-NEXT:   },
 ; CHECK-NEXT:   "{{m_[0-9x]+}}": {
-; CHECK-NEXT:     "file": 0
+; CHECK-NEXT:     "loc": [
+; CHECK-NEXT:       0,
+; CHECK-NEXT:       {{[0-9]+}}
+; CHECK-NEXT:     ]
 ; CHECK-NEXT:   }
 ; CHECK-NEXT: },
 ; CHECK:      "bindings": [
