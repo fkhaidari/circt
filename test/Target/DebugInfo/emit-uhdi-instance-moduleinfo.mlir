@@ -20,11 +20,11 @@ hw.module @Cpu(in %a : i8, out q : i8)
 
 // CHECK:      "modules":
 // CHECK:        "Alu":
-// CHECK-NOT:      "typeName"
+// CHECK-NOT:      "type_name"
 // CHECK:        "Cpu":
 // CHECK:          "source":
 // CHECK:            "x-chisel":
-// CHECK-NEXT:         "typeName": "Cpu"
+// CHECK-NEXT:         "type_name": "Cpu"
 // CHECK:          "instances":
 // CHECK:            "alu":
 // CHECK-NEXT:         "moduleRef": "Alu"
@@ -34,4 +34,4 @@ hw.module @Cpu(in %a : i8, out q : i8)
 // CHECK:                  "name": "width"
 // CHECK-NEXT:             "type": "Int"
 // CHECK-NEXT:             "value": "8"
-// CHECK:                "typeName": "Alu"
+// CHECK:                "type_name": "Alu"

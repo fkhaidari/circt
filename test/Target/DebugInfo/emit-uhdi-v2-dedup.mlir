@@ -50,7 +50,7 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 // CHECK:            "p": {
 // CHECK:            "q": {
 // CHECK:          "x-chisel": {
-// CHECK-NEXT:       "typeName": "ClassA"
+// CHECK-NEXT:       "type_name": "ClassA"
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // CHECK-NEXT:   "B": {
@@ -64,7 +64,7 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 // CHECK:            "p": {
 // CHECK:            "q": {
 // CHECK:          "x-chisel": {
-// CHECK-NEXT:       "typeName": "ClassB"
+// CHECK-NEXT:       "type_name": "ClassB"
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // CHECK-NEXT:   "Top": {

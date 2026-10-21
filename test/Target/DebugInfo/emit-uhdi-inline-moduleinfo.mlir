@@ -17,7 +17,7 @@ hw.module @Parent(in %en : i1, out o : i1)
 // CHECK:        "Parent":
 // CHECK:          "source": {
 // CHECK:            "x-chisel": {
-// CHECK-NEXT:         "typeName": "Parent"
+// CHECK-NEXT:         "type_name": "Parent"
 
 // CHECK:          "scopes": [
 // CHECK-NEXT:       {
@@ -28,4 +28,4 @@ hw.module @Parent(in %en : i1, out o : i1)
 // CHECK-NEXT:             {
 // CHECK-NEXT:               "name": "width",
 // CHECK-NEXT:               "value": "8"
-// CHECK:                "typeName": "Child"
+// CHECK:                "type_name": "Child"

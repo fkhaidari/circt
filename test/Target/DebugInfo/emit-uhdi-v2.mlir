@@ -142,7 +142,7 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:           "value": "8"
 // CHECK-NEXT:         }
 // CHECK-NEXT:       ],
-// CHECK-NEXT:       "typeName": "ChildClass"
+// CHECK-NEXT:       "type_name": "ChildClass"
 // CHECK-NEXT:     }
 // CHECK-NEXT:   },
 // An extern module is declared in the source too, with nothing inside.
@@ -163,7 +163,7 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK:            "e": {
 // CHECK:              "type": 6
 // CHECK:          "x-chisel": {
-// CHECK-NEXT:       "typeName": "Top"
+// CHECK-NEXT:       "type_name": "Top"
 
 // The target lists the Verilog modules only, each where its declaration is.
 // CHECK:      "generated": {
@@ -198,12 +198,12 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:         "v": [
 // CHECK-NEXT:           "a",
 // CHECK-NEXT:           {
-// CHECK-NEXT:             "$optimizedOut": true
+// CHECK-NEXT:             "$optimized_out": true
 // CHECK-NEXT:           }
 // CHECK-NEXT:         ]
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "lost": {
-// CHECK-NEXT:         "$optimizedOut": true
+// CHECK-NEXT:         "$optimized_out": true
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "r": "a"
 // CHECK-NEXT:     }

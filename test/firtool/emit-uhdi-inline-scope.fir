@@ -48,7 +48,7 @@ circuit Top: %[[
 ; CHECK-NEXT:         "source": {
 ; CHECK:                "name": "c0",
 ; CHECK-NEXT:           "x-chisel": {
-; CHECK-NEXT:             "typeName": "Child"
+; CHECK-NEXT:             "type_name": "Child"
 ; CHECK-NOT:          "target"
 ; CHECK:              "variables": {
 

@@ -34,15 +34,15 @@ circuit Top:
 ; Only one definition survives, and it carries no class name.
 ; CHECK:      "modules":
 ; CHECK-NEXT:   "A":
-; CHECK-NOT:      "typeName"
+; CHECK-NOT:      "type_name"
 
 ; CHECK:        "Top":
 ; CHECK:          "instances":
 ; CHECK:            "ia":
 ; CHECK-NEXT:         "moduleRef": "A"
 ; CHECK:                "x-chisel":
-; CHECK-NEXT:             "typeName": "ClassA"
+; CHECK-NEXT:             "type_name": "ClassA"
 ; CHECK:            "ib":
 ; CHECK-NEXT:         "moduleRef": "A"
 ; CHECK:                "x-chisel":
-; CHECK-NEXT:             "typeName": "ClassB"
+; CHECK-NEXT:             "type_name": "ClassB"

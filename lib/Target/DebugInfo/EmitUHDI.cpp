@@ -1629,7 +1629,7 @@ void UhdiEmitter::collectModule(hw::HWModuleOp module, EmitState &s) {
   ScopeRecord &scope = addScope(sym, "module");
   scope.op = module;
   if (auto typeName = moduleSourceTypeName(module))
-    sourceExt(scope.source)["typeName"] = typeName.getValue().str();
+    sourceExt(scope.source)["type_name"] = typeName.getValue().str();
   if (Array params = moduleSourceParams(module); !params.empty())
     sourceExt(scope.source)["params"] = std::move(params);
   if (auto loc = s.chiselLoc(module.getLoc()))
@@ -1648,7 +1648,7 @@ void UhdiEmitter::collectModule(hw::HWModuleOp module, EmitState &s) {
     if (auto origin = inst->getAttrOfType<StringAttr>(kDbgOriginAttr))
       rec.origin = origin.getValue().str();
     if (auto typeName = moduleSourceTypeName(inst))
-      sourceExt(rec.source)["typeName"] = typeName.getValue().str();
+      sourceExt(rec.source)["type_name"] = typeName.getValue().str();
     if (Array params = moduleSourceParams(inst); !params.empty())
       sourceExt(rec.source)["params"] = std::move(params);
     if (auto loc = s.chiselLoc(inst.getLoc()))
@@ -1719,7 +1719,7 @@ void UhdiEmitter::collectInlineScope(debug::ScopeOp scope, EmitState &s) {
   if (!scope.getInstanceName().empty())
     rec.source["name"] = scope.getInstanceName().str();
   if (auto typeName = moduleSourceTypeName(scope))
-    sourceExt(rec.source)["typeName"] = typeName.getValue().str();
+    sourceExt(rec.source)["type_name"] = typeName.getValue().str();
   if (Array params = moduleSourceParams(scope); !params.empty())
     sourceExt(rec.source)["params"] = std::move(params);
   if (auto loc = s.chiselLoc(scope.getLoc()))
@@ -1899,7 +1899,7 @@ static Object moduleInfoExt(DictionaryAttr moduleInfo) {
   if (!moduleInfo)
     return ext;
   if (auto typeName = moduleInfo.getAs<StringAttr>("typeName"))
-    ext["typeName"] = typeName.getValue().str();
+    ext["type_name"] = typeName.getValue().str();
   if (Array params =
           renderTypeSourceParams(moduleInfo.getAs<ArrayAttr>("params"));
       !params.empty())
@@ -1959,7 +1959,7 @@ static Object layoutTypes(const Object &pool) {
   return out;
 }
 
-static llvm::json::Value noValue() { return Object{{"$optimizedOut", true}}; }
+static llvm::json::Value noValue() { return Object{{"$optimized_out", true}}; }
 
 /// Bit width of a leaf of pool type `typeId`; an enum has its base's.
 static unsigned leafWidth(const Object &pool, StringRef typeId) {

@@ -314,9 +314,9 @@ SmallVector<Attribute> CaptureDebugStmtsPass::captureBlock(Block &block) {
         readLatency = 1;
       }
       fields.push_back(
-          b->getNamedAttr("readLatency", b->getI32IntegerAttr(readLatency)));
+          b->getNamedAttr("read_latency", b->getI32IntegerAttr(readLatency)));
       fields.push_back(
-          b->getNamedAttr("writeLatency", b->getI32IntegerAttr(writeLatency)));
+          b->getNamedAttr("write_latency", b->getI32IntegerAttr(writeLatency)));
       createStmt(&op, "mem", fields);
       record();
       continue;

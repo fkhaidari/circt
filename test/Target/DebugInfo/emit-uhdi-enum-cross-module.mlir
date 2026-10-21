@@ -54,7 +54,7 @@ hw.module @Borrower(in %op : i2) attributes {dbg.moduleinfo = {typeName = "Borro
 // CHECK:          "variables":
 // CHECK-NEXT:       "io":
 // CHECK:              "binding": "IO"
-// CHECK-NOT:          "typeName"
+// CHECK-NOT:          "type_name"
 // CHECK:              "verilog":
 // CHECK-NEXT:           "op": "op"
 // CHECK:            "typeRef": "Owner_io"
