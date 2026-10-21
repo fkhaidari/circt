@@ -12,13 +12,18 @@ circuit Top:
     intrinsic(circt_debug_var<typeName = "IO[AluOp]", name = "op", enumTypeName = "AluOp", enumFqn = "pkg.AluOp", variant_ADD = 0, variant_SUB = 1, variant_AND = 2, variant_OR = 3, width = 2>, op)
     connect out, op
 
-; CHECK:      "pkg.AluOp": {
-; CHECK-NEXT:   "base": "uint2",
-; CHECK-NEXT:   "kind": "enum",
-; CHECK-NEXT:   "name": "AluOp",
-; CHECK-NEXT:   "values": {
-; CHECK-NEXT:     "ADD": 0,
-; CHECK-NEXT:     "AND": 2,
-; CHECK-NEXT:     "OR": 3,
-; CHECK-NEXT:     "SUB": 1
-; CHECK-NEXT:   }
+; CHECK:      "types": [
+; CHECK-NEXT:   {
+; CHECK-NEXT:     "kind": "uint",
+; CHECK-NEXT:     "width": 2
+; CHECK-NEXT:   },
+; CHECK-NEXT:   {
+; CHECK-NEXT:     "base": 0,
+; CHECK-NEXT:     "kind": "enum",
+; CHECK-NEXT:     "name": "AluOp",
+; CHECK-NEXT:     "values": {
+; CHECK-NEXT:       "ADD": 0,
+; CHECK-NEXT:       "AND": 2,
+; CHECK-NEXT:       "OR": 3,
+; CHECK-NEXT:       "SUB": 1
+; CHECK-NEXT:     }

@@ -20,16 +20,18 @@ circuit T :
 ; CHECK:      "profiles": [
 ; CHECK-NEXT:   "x-chisel"
 ; CHECK-NEXT: ],
-; CHECK:      "types": {
-; CHECK-NEXT:   "T_io": {
-; CHECK:          "name": "Pair"
-; CHECK-NEXT:   },
-; CHECK-NEXT:   "bool": {
+; A type comes after the types it is built from.
+; CHECK:      "types": [
+; CHECK-NEXT:   {
 ; CHECK-NEXT:     "kind": "uint",
 ; CHECK-NEXT:     "name": "Bool",
 ; CHECK-NEXT:     "width": 1
+; CHECK-NEXT:   },
+; CHECK-NEXT:   {
+; CHECK:          "type": 0
+; CHECK:          "name": "Pair"
 ; CHECK-NEXT:   }
-; CHECK-NEXT: },
+; CHECK-NEXT: ],
 ; CHECK:      "generated": {
 ; CHECK-NEXT:   "T": {
 ; CHECK-NEXT:     "file": 0

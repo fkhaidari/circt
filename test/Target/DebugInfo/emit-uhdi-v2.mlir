@@ -57,47 +57,57 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:   }
 // CHECK-NEXT: ],
 
-// Struct fields carry their own type; an enum maps labels to values.
-// CHECK:      "types": {
-// CHECK-NEXT:   "Child_io": {
-// CHECK-NEXT:     "fields": [
-// CHECK-NEXT:       {
-// CHECK-NEXT:         "name": "a",
-// CHECK-NEXT:         "type": "uint8"
-// CHECK-NEXT:       },
-// CHECK-NEXT:       {
-// CHECK-NEXT:         "name": "op",
-// CHECK-NEXT:         "type": "pkg.Op"
-// CHECK-NEXT:       },
-// CHECK-NEXT:       {
-// CHECK-NEXT:         "name": "v",
-// CHECK-NEXT:         "type": "Child_io_v"
-// CHECK-NEXT:       }
-// CHECK-NEXT:     ],
-// CHECK-NEXT:     "kind": "struct",
-// CHECK-NEXT:     "name": "Bundle"
+// Struct fields carry their own type; an enum maps labels to values. A type
+// comes after the types it is built from.
+// CHECK:      "types": [
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "kind": "uint",
+// CHECK-NEXT:     "name": "UInt<8>",
+// CHECK-NEXT:     "width": 8
 // CHECK-NEXT:   },
-// CHECK-NEXT:   "Child_io_v": {
-// CHECK-NEXT:     "elem": "uint8",
-// CHECK-NEXT:     "kind": "vector",
-// CHECK-NEXT:     "size": 2
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "kind": "uint",
+// CHECK-NEXT:     "width": 2
 // CHECK-NEXT:   },
-// CHECK-NEXT:   "module_Child": {
-// CHECK-NEXT:     "kind": "module",
-// CHECK-NEXT:     "module": "Child"
-// CHECK-NEXT:   },
-// CHECK-NEXT:   "module_Ext": {
-// CHECK-NEXT:     "kind": "module",
-// CHECK-NEXT:     "module": "Ext"
-// CHECK-NEXT:   },
-// CHECK-NEXT:   "pkg.Op": {
-// CHECK-NEXT:     "base": "uint2",
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "base": 1,
 // CHECK-NEXT:     "kind": "enum",
 // CHECK-NEXT:     "name": "Op",
 // CHECK-NEXT:     "values": {
 // CHECK-NEXT:       "Add": 0,
 // CHECK-NEXT:       "Sub": 1
 // CHECK-NEXT:     }
+// CHECK-NEXT:   },
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "elem": 0,
+// CHECK-NEXT:     "kind": "vector",
+// CHECK-NEXT:     "size": 2
+// CHECK-NEXT:   },
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "fields": [
+// CHECK-NEXT:       {
+// CHECK-NEXT:         "name": "a",
+// CHECK-NEXT:         "type": 0
+// CHECK-NEXT:       },
+// CHECK-NEXT:       {
+// CHECK-NEXT:         "name": "op",
+// CHECK-NEXT:         "type": 2
+// CHECK-NEXT:       },
+// CHECK-NEXT:       {
+// CHECK-NEXT:         "name": "v",
+// CHECK-NEXT:         "type": 3
+// CHECK-NEXT:       }
+// CHECK-NEXT:     ],
+// CHECK-NEXT:     "kind": "struct",
+// CHECK-NEXT:     "name": "Bundle"
+// CHECK-NEXT:   },
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "kind": "module",
+// CHECK-NEXT:     "module": "Child"
+// CHECK-NEXT:   },
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "kind": "module",
+// CHECK-NEXT:     "module": "Ext"
 // CHECK-NEXT:   },
 
 // The class recorded on the only instance describes the source module. The
@@ -112,11 +122,11 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:     "vars": {
 // CHECK-NEXT:       "b": {
 // CHECK-NEXT:         "dir": "out",
-// CHECK-NEXT:         "type": "uint8"
+// CHECK-NEXT:         "type": 0
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "io": {
 // CHECK-NEXT:         "dir": "in",
-// CHECK:              "type": "Child_io",
+// CHECK:              "type": 4,
 // CHECK-NEXT:         "x-chisel": {
 // CHECK-NEXT:           "binding": "IO"
 // CHECK-NEXT:         }
@@ -148,10 +158,10 @@ hw.module @Top(in %a : i8, in %op : i2, out b : i8) attributes {dbg.moduleinfo =
 // CHECK-NEXT:           4,
 // CHECK-NEXT:           5
 // CHECK-NEXT:         ],
-// CHECK-NEXT:         "type": "module_Child"
+// CHECK-NEXT:         "type": 5
 // CHECK-NEXT:       },
 // CHECK:            "e": {
-// CHECK:              "type": "module_Ext"
+// CHECK:              "type": 6
 // CHECK:          "x-chisel": {
 // CHECK-NEXT:       "typeName": "Top"
 

@@ -27,6 +27,16 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
   hw.output %ia.q, %ib.q : i8, i8
 }
 
+// CHECK:      "types": [
+// CHECK:          "kind": "module",
+// CHECK-NEXT:     "module": "A"
+// CHECK-NEXT:   },
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "kind": "module",
+// CHECK-NEXT:     "module": "B"
+// CHECK-NEXT:   }
+// CHECK-NEXT: ],
+
 // The class B claims is left over for A.
 // CHECK:      "original": {
 // CHECK-NEXT:   "A": {
@@ -59,9 +69,9 @@ hw.module @Top(in %a : i8, out x : i8, out y : i8) {
 // CHECK-NEXT:   },
 // CHECK-NEXT:   "Top": {
 // CHECK:            "ia": {
-// CHECK:              "type": "module_A"
+// CHECK:              "type": 1
 // CHECK:            "ib": {
-// CHECK:              "type": "module_B"
+// CHECK:              "type": 2
 
 // CHECK:      "generated": {
 // CHECK-NEXT:   "A": {},

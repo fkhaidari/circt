@@ -26,9 +26,12 @@ circuit M :
     intrinsic(circt_debug_var<typeName = "IO[UInt<8>]", name = "data">, data)
     intrinsic(circt_debug_var<typeName = "SyncReadMem[UInt<8>[2]]", name = "mem">) @[M.scala 3:16]
 
-; CHECK:      "types": {
-; CHECK:        "M_mem": {
-; CHECK-NEXT:     "elem": "uint8",
+; CHECK:      "types": [
+; CHECK:            "name": "UInt<8>",
+; CHECK-NEXT:     "width": 8
+; CHECK-NEXT:   },
+; CHECK-NEXT:   {
+; CHECK-NEXT:     "elem": 2,
 ; CHECK-NEXT:     "kind": "vector",
 ; CHECK-NEXT:     "name": "UInt<8>[2]",
 ; CHECK-NEXT:     "size": 2
@@ -42,7 +45,7 @@ circuit M :
 ; CHECK-NEXT:           3,
 ; CHECK-NEXT:           16
 ; CHECK-NEXT:         ],
-; CHECK-NEXT:         "type": "M_mem",
+; CHECK-NEXT:         "type": 3,
 ; CHECK-NEXT:         "x-chisel": {
 ; CHECK-NEXT:           "binding": "SyncReadMem"
 ; CHECK-NEXT:         }

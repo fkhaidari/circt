@@ -5,13 +5,22 @@
 ; RUN: FileCheck %s --check-prefix=INLINE --input-file=%t.inline.json
 
 ; Dedup merges B into A. Each instance is still typed by the source module it
-; stood for, kept or inlined.
+; stood for, kept or inlined: types 2 and 3 are modules A and B.
 
+; KEEP:      "types": [
+; KEEP:          "kind": "module",
+; KEEP-NEXT:     "module": "A"
+; KEEP-NEXT:   },
+; KEEP-NEXT:   {
+; KEEP-NEXT:     "kind": "module",
+; KEEP-NEXT:     "module": "B"
+; KEEP-NEXT:   }
+; KEEP-NEXT: ],
 ; KEEP:      "Top": {
 ; KEEP:        "ia": {
-; KEEP-NEXT:     "type": "module_A"
+; KEEP-NEXT:     "type": 2
 ; KEEP:        "ib": {
-; KEEP-NEXT:     "type": "module_B"
+; KEEP-NEXT:     "type": 3
 ; KEEP:      "original": "Top",
 ; KEEP:        "ia": {
 ; KEEP-NEXT:     "$inst": "ia",
@@ -20,11 +29,20 @@
 ; KEEP-NEXT:     "$inst": "ib",
 ; KEEP-NEXT:     "module": "A"
 
+; INLINE:      "types": [
+; INLINE:          "kind": "module",
+; INLINE-NEXT:     "module": "A"
+; INLINE-NEXT:   },
+; INLINE-NEXT:   {
+; INLINE-NEXT:     "kind": "module",
+; INLINE-NEXT:     "module": "B"
+; INLINE-NEXT:   }
+; INLINE-NEXT: ],
 ; INLINE:      "Top": {
 ; INLINE:        "ia": {
-; INLINE-NEXT:     "type": "module_A"
+; INLINE-NEXT:     "type": 2
 ; INLINE:        "ib": {
-; INLINE-NEXT:     "type": "module_B"
+; INLINE-NEXT:     "type": 3
 ; INLINE:      "original": "Top",
 ; INLINE:        "ia": {
 ; INLINE-NEXT:     "$inline": "ia"

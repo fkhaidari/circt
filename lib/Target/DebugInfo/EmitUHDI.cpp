@@ -2581,6 +2581,48 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
   for (auto &[module, id] : moduleTypes)
     liveTypes[id] = Object{{"kind", "module"}, {"module", module}};
 
+  // Variables and types name a type by its index into `types`. A type comes
+  // after the types it is built from, in the order a walk of the original
+  // modules reaches them, so the numbers stay put while the design does.
+  llvm::StringMap<int64_t> typeIndex;
+  Array typeList;
+  std::function<int64_t(StringRef)> number = [&](StringRef key) -> int64_t {
+    if (auto it = typeIndex.find(key); it != typeIndex.end())
+      return it->second;
+    Object *live = liveTypes.getObject(key);
+    assert(live && "a variable names a type that was not interned");
+    Object type = std::move(*live);
+    if (auto *fields = type.getArray("fields"))
+      for (auto &field : *fields) {
+        Object &f = *field.getAsObject();
+        int64_t index = number(*f.getString("type"));
+        f["type"] = index;
+      }
+    for (StringRef ref : {"elem", "base"})
+      if (auto r = type.getString(ref)) {
+        int64_t index = number(*r);
+        type[ref] = index;
+      }
+    int64_t index = typeList.size();
+    typeIndex[key] = index;
+    typeList.push_back(std::move(type));
+    return index;
+  };
+  for (auto &[name, entry] : sources) {
+    Object &vars = *entry.getObject("vars");
+    SmallVector<std::string> keys;
+    for (auto &kv : vars)
+      keys.push_back(kv.first.str());
+    llvm::sort(keys);
+    for (auto &key : keys) {
+      Object &var = *vars.getObject(key);
+      if (auto type = var.getString("type")) {
+        int64_t index = number(*type);
+        var["type"] = index;
+      }
+    }
+  }
+
   // Profiles the document uses, and only those.
   std::function<bool(const llvm::json::Value &)> hasChisel =
       [&](const llvm::json::Value &value) {
@@ -2597,7 +2639,7 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
         }
         return false;
       };
-  bool usesChisel = hasChisel(llvm::json::Value(Object(liveTypes))) ||
+  bool usesChisel = hasChisel(llvm::json::Value(Array(typeList))) ||
                     hasChisel(llvm::json::Value(Object(targets)));
   for (auto &[name, entry] : sources)
     usesChisel |= hasChisel(llvm::json::Value(Object(entry)));
@@ -2622,7 +2664,7 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
     j.attribute("producer", "firtool");
     j.attribute("profiles", std::move(profiles));
     j.attribute("files", std::move(files));
-    j.attribute("types", std::move(liveTypes));
+    j.attribute("types", std::move(typeList));
     j.attributeObject("original", [&] {
       for (auto &[name, entry] : sources)
         j.attribute(name, std::move(entry));

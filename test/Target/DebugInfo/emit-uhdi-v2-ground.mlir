@@ -19,37 +19,40 @@ hw.module @G(in %clk : i1, in %a : i8, in %b : i8, in %c : i8) {
   dbg.variable "u", %c : i8 loc(#loc)
 } loc(#loc)
 
-// CHECK:      "types": {
-// CHECK:        "G_arr": {
-// CHECK-NEXT:     "elem": "sint8",
-// CHECK:        "G_st": {
-// CHECK-NEXT:     "fields": [
-// CHECK-NEXT:       {
-// CHECK-NEXT:         "name": "x",
-// CHECK-NEXT:         "type": "sint8"
-// CHECK-NEXT:       },
-// CHECK-NEXT:       {
-// CHECK-NEXT:         "name": "y",
-// CHECK-NEXT:         "type": "uint8"
-// CHECK:        "clock": {
-// CHECK-NEXT:     "kind": "clock"
-// CHECK-NEXT:   },
-// CHECK:        "sint8": {
+// CHECK:      "types": [
+// CHECK-NEXT:   {
 // CHECK-NEXT:     "kind": "sint",
 // CHECK-NEXT:     "name": "SInt<8>",
 // CHECK-NEXT:     "width": 8
-// CHECK:        "uint8": {
+// CHECK-NEXT:   },
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "elem": 0,
+// CHECK:        {
+// CHECK-NEXT:     "kind": "clock"
+// CHECK-NEXT:   },
+// CHECK-NEXT:   {
 // CHECK-NEXT:     "kind": "uint",
+// CHECK-NEXT:     "width": 8
+// CHECK-NEXT:   },
+// CHECK-NEXT:   {
+// CHECK-NEXT:     "fields": [
+// CHECK-NEXT:       {
+// CHECK-NEXT:         "name": "x",
+// CHECK-NEXT:         "type": 0
+// CHECK-NEXT:       },
+// CHECK-NEXT:       {
+// CHECK-NEXT:         "name": "y",
+// CHECK-NEXT:         "type": 3
 
 // CHECK:      "vars": {
 // CHECK-NEXT:   "arr": {
-// CHECK:          "type": "G_arr"
+// CHECK:          "type": 1
 // CHECK:        "clk": {
-// CHECK:          "type": "clock"
+// CHECK:          "type": 2
 // CHECK:        "s": {
-// CHECK:          "type": "sint8"
+// CHECK:          "type": 0
 // CHECK:        "u": {
-// CHECK:          "type": "uint8"
+// CHECK:          "type": 3
 
 // Layout 1 keeps the integer types.
 // V1-NOT: "sint"

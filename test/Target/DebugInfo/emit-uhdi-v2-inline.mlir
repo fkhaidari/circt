@@ -18,15 +18,15 @@ hw.module @Top(in %a : i8, out o : i8) {
   hw.output %a : i8
 }
 
-// CHECK:      "types": {
-// CHECK-NEXT:   "module_Leaf": {
-// CHECK-NEXT:     "kind": "module",
+// CHECK:      "types": [
+// CHECK:          "kind": "module",
 // CHECK-NEXT:     "module": "Leaf"
 // CHECK-NEXT:   },
-// CHECK-NEXT:   "module_Mid": {
+// CHECK-NEXT:   {
 // CHECK-NEXT:     "kind": "module",
 // CHECK-NEXT:     "module": "Mid"
-// CHECK-NEXT:   },
+// CHECK-NEXT:   }
+// CHECK-NEXT: ],
 
 // CHECK:      "original": {
 // CHECK-NEXT:   "Leaf": {
@@ -40,7 +40,7 @@ hw.module @Top(in %a : i8, out o : i8) {
 // CHECK-NEXT:           7,
 // CHECK-NEXT:           9
 // CHECK-NEXT:         ],
-// CHECK-NEXT:         "type": "module_Leaf"
+// CHECK-NEXT:         "type": 1
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "y": {
 // CHECK:          "Top": {
@@ -50,7 +50,7 @@ hw.module @Top(in %a : i8, out o : i8) {
 // CHECK-NEXT:           3,
 // CHECK-NEXT:           5
 // CHECK-NEXT:         ],
-// CHECK-NEXT:         "type": "module_Mid"
+// CHECK-NEXT:         "type": 2
 // CHECK-NEXT:       },
 
 // CHECK:      "generated": {

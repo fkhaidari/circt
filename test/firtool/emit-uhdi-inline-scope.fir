@@ -69,8 +69,8 @@ circuit Top: %[[
 
 ; A clock lowers to a one-bit signal; `dbg.ground` recorded it as a clock
 ; before that.
-; V2:      "types": {
-; V2-NEXT:   "clock": {
+; V2:      "types": [
+; V2-NEXT:   {
 ; V2-NEXT:     "kind": "clock",
 ; V2-NEXT:     "name": "Clock"
 ; V2-NEXT:   },
