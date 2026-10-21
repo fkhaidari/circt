@@ -1355,17 +1355,6 @@ private:
   }
 };
 
-/// Drops `circt_debug_typedef`: there is no `dbg.typedef` op yet.
-class CirctDebugTypeDefConverter : public IntrinsicConverter {
-public:
-  using IntrinsicConverter::IntrinsicConverter;
-  bool check(GenericIntrinsic gi) override { return false; }
-  void convert(GenericIntrinsic gi, GenericIntrinsicOpAdaptor,
-               PatternRewriter &rewriter) override {
-    rewriter.eraseOp(gi.op);
-  }
-};
-
 //===----------------------------------------------------------------------===//
 // View intrinsic converter and helpers
 //===----------------------------------------------------------------------===//
@@ -1618,7 +1607,6 @@ public:
 void FIRRTLIntrinsicLoweringDialectInterface::populateIntrinsicLowerings(
     IntrinsicLowerings &lowering) const {
   populateLowerings(lowering);
-  lowering.add<CirctDebugTypeDefConverter>("circt_debug_typedef");
   lowering.add<CirctDebugVarConverter>("circt_debug_var");
   lowering.add<CirctDebugModuleInfoConverter>("circt_debug_moduleinfo");
 }

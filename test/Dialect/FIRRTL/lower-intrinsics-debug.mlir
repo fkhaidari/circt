@@ -362,20 +362,6 @@ firrtl.circuit "NestedBundleTest" {
 
 // -----
 
-// circt_debug_typedef is silently consumed: no representation in the IR yet,
-// and no error.
-
-// CHECK-LABEL: firrtl.module @TypeDefDropped
-firrtl.circuit "TypeDefDropped" {
-  firrtl.module @TypeDefDropped() {
-    // CHECK-NOT: circt_debug_typedef
-    firrtl.int.generic "circt_debug_typedef"
-      <typeName: none = "MyAlias"> : () -> ()
-  }
-}
-
-// -----
-
 // Nested bundle: bundle<a: bundle<b: uint<8>>>.
 // A single circt_debug_subfield for the leaf "io.a.b" (parent="io") and a
 // circt_debug_var for the root "io".  The converter must recurse two levels:
