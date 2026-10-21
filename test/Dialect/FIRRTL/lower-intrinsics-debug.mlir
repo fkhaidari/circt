@@ -218,6 +218,23 @@ firrtl.circuit "ModuleInfoWithParams" {
 
 // -----
 
+// moduleinfo naming an instance goes on that instance, not on the module.
+
+// CHECK-LABEL: firrtl.circuit "ModuleInfoOnInstance"
+firrtl.circuit "ModuleInfoOnInstance" {
+  firrtl.module private @Child() {}
+  // CHECK: firrtl.module @ModuleInfoOnInstance() {
+  firrtl.module @ModuleInfoOnInstance() {
+    // CHECK-NEXT: firrtl.instance c0 {dbg.moduleinfo = {typeName = "Child"}} @Child()
+    // CHECK-NEXT: }
+    firrtl.instance c0 @Child()
+    firrtl.int.generic "circt_debug_moduleinfo"
+      <typeName: none = "Child", instance: none = "c0"> : () -> ()
+  }
+}
+
+// -----
+
 // 0-operand circt_debug_var: the frontend emits no SSA operand when the
 // referenced value is a non-passive aggregate (e.g. a bidirectional bundle
 // port) whose SSA form is not directly assignable to a dbg.variable. The

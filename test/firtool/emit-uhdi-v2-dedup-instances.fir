@@ -54,7 +54,6 @@ circuit Top:
     input p : UInt<8>
     output q : UInt<8>
     node w = add(p, UInt<8>(1)) @[A.scala 5:10]
-    intrinsic(circt_debug_moduleinfo<typeName = "ClassA">)
     intrinsic(circt_debug_var<typeName = "Wire[UInt<8>]", name = "alpha">, w) @[A.scala 5:10]
     connect q, tail(w, 1)
 
@@ -62,7 +61,6 @@ circuit Top:
     input p : UInt<8>
     output q : UInt<8>
     node w = add(p, UInt<8>(1)) @[B.scala 7:12]
-    intrinsic(circt_debug_moduleinfo<typeName = "ClassB">)
     intrinsic(circt_debug_var<typeName = "Wire[UInt<8>]", name = "beta">, w) @[B.scala 7:12]
     connect q, tail(w, 1)
 
@@ -71,7 +69,9 @@ circuit Top:
     output x : UInt<8>
     output y : UInt<8>
     inst ia of A
+    intrinsic(circt_debug_moduleinfo<typeName = "ClassA", instance = "ia">)
     inst ib of B
+    intrinsic(circt_debug_moduleinfo<typeName = "ClassB", instance = "ib">)
     connect ia.p, a
     connect ib.p, a
     connect x, ia.q

@@ -255,3 +255,28 @@ firrtl.circuit "DebugVarBadParams" {
       %x : (!firrtl.uint<8>) -> ()
   }
 }
+
+// -----
+
+firrtl.circuit "ModuleInfoNoInstance" {
+  firrtl.module @ModuleInfoNoInstance() {
+    // expected-error @below {{circt_debug_moduleinfo: no instance named 'c0' in this module}}
+    // expected-error @below {{failed to legalize operation 'firrtl.int.generic'}}
+    firrtl.int.generic "circt_debug_moduleinfo"
+      <typeName: none = "Child", instance: none = "c0"> : () -> ()
+  }
+}
+
+// -----
+
+firrtl.circuit "ModuleInfoOnPrivateModule" {
+  firrtl.module private @Child() {
+    // expected-error @below {{circt_debug_moduleinfo: a private module is instantiated, so its class goes on the 'instance' that instantiates it}}
+    // expected-error @below {{failed to legalize operation 'firrtl.int.generic'}}
+    firrtl.int.generic "circt_debug_moduleinfo"
+      <typeName: none = "Child"> : () -> ()
+  }
+  firrtl.module @ModuleInfoOnPrivateModule() {
+    firrtl.instance c0 @Child()
+  }
+}

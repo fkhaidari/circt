@@ -145,11 +145,10 @@ static Array renderTypeSourceParams(ArrayAttr params) {
 }
 
 /// Source-language type name and constructor params recorded by
-/// `dbg.moduleinfo`. The intrinsic lowering sets the attribute on the module,
-/// and PropagateDebugClassInfo moves it onto every instance of that module, so
-/// it is read off the instance. A module with no instantiation site keeps its
-/// own record, and inlining copies the record onto the `dbg.scope` it creates,
-/// since the instance is gone by then.
+/// `dbg.moduleinfo`. The intrinsic lowering sets the attribute on every
+/// instance of the module, so it is read off the instance. The top module has
+/// no instantiation site and keeps its own record, and inlining copies the
+/// record onto the `dbg.scope` it creates, since the instance is gone by then.
 static StringAttr moduleSourceTypeName(Operation *op) {
   if (auto miAttr = op->getAttrOfType<DictionaryAttr>(kDbgModuleInfoAttr))
     return miAttr.getAs<StringAttr>("typeName");
@@ -2344,7 +2343,7 @@ void UhdiEmitter::renderLayout2(llvm::json::OStream &j) {
           entry["x-chisel"] = std::move(ext);
         }
       }
-    // PropagateDebugClassInfo leaves the class on the instances. Those of a
+    // The class lives on the instances. Those of a
     // deduplicated module name every source merged into it; the one no
     // origin claims is the module's own.
     if (auto *ext = scope.source.getObject("x-chisel")) {

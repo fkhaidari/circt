@@ -10,13 +10,11 @@ circuit Top:
   module A :
     input p : UInt<8>
     output q : UInt<8>
-    intrinsic(circt_debug_moduleinfo<typeName = "ClassA">)
     connect q, p
 
   module B :
     input p : UInt<8>
     output q : UInt<8>
-    intrinsic(circt_debug_moduleinfo<typeName = "ClassB">)
     connect q, p
 
   public module Top :
@@ -25,7 +23,9 @@ circuit Top:
     output y : UInt<8>
 
     inst ia of A
+    intrinsic(circt_debug_moduleinfo<typeName = "ClassA", instance = "ia">)
     inst ib of B
+    intrinsic(circt_debug_moduleinfo<typeName = "ClassB", instance = "ib">)
     connect ia.p, a
     connect ib.p, a
     connect x, ia.q

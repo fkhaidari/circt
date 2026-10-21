@@ -1672,8 +1672,8 @@ private:
   /// recorded if the "fromModule" carries no debug info.
   void mergeDebugOrigins(FModuleLike toModule, FModuleLike fromModule) {
     auto moduleInfo = fromModule->getAttr(debug::kDbgModuleInfoAttr);
-    // PropagateDebugClassInfo may have moved the record onto the instances.
-    // Take it back from there when they all agree on it.
+    // The frontend records the class on the instances. Take it from there when
+    // they all agree on it.
     if (!moduleInfo) {
       auto *node = instanceGraph.lookup(fromModule.getModuleNameAttr());
       for (auto *use : node->uses()) {

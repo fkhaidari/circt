@@ -22,7 +22,6 @@ circuit Top: %[[
     input p : UInt<8>
     output q : UInt<8>
 
-    intrinsic(circt_debug_moduleinfo<typeName = "Child">) @[Child.scala 3:7]
     intrinsic(circt_debug_var<typeName = "IO[Clock]", name = "clock">, clock) @[Child.scala 3:7]
     node w = add(p, UInt<8>(1)) @[Child.scala 5:11]
     intrinsic(circt_debug_var<typeName = "Wire[UInt<8>]", name = "w">, w) @[Child.scala 5:11]
@@ -34,6 +33,7 @@ circuit Top: %[[
     output b : UInt<8>
 
     inst c0 of Child @[Top.scala 9:20]
+    intrinsic(circt_debug_moduleinfo<typeName = "Child", instance = "c0">) @[Top.scala 9:20]
     connect c0.clock, clock
     connect c0.p, a
     connect b, c0.q

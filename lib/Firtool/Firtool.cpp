@@ -103,10 +103,6 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
 
   pm.nest<firrtl::CircuitOp>().addPass(firrtl::createDropConst());
 
-  // Runs after option selection has picked the final instances, and before
-  // dedup erases the modules whose records have to be moved.
-  pm.nest<firrtl::CircuitOp>().addPass(firrtl::createPropagateDebugClassInfo());
-
   if (opt.shouldDedup()) {
     firrtl::DedupOptions opts;
     opts.dedupClasses = opt.shouldDedupClasses();

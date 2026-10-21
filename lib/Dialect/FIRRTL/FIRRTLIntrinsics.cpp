@@ -815,29 +815,56 @@ public:
 
   bool check(GenericIntrinsic gi) override {
     return gi.hasNInputs(0) || gi.namedParam("typeName") ||
-           gi.namedParam("params", /*optional=*/true) || gi.hasNParam(1, 1) ||
+           gi.namedParam("instance", /*optional=*/true) ||
+           gi.namedParam("params", /*optional=*/true) || gi.hasNParam(1, 2) ||
            gi.hasNoOutput();
   }
 
-  void convert(GenericIntrinsic gi, GenericIntrinsicOpAdaptor adaptor,
-               PatternRewriter &rewriter) override {
+  LogicalResult checkAndConvert(GenericIntrinsic gi,
+                                GenericIntrinsicOpAdaptor adaptor,
+                                PatternRewriter &rewriter,
+                                IntrinsicConvertContext) override {
+    if (check(gi))
+      return failure();
     auto *context = rewriter.getContext();
     auto typeName = gi.getParamValue<StringAttr>("typeName");
+    auto instanceName = gi.getParamValue<StringAttr>("instance");
     auto paramsStr = gi.getParamValue<StringAttr>("params");
 
-    // Module-level type info goes on a discardable attribute, not a dedicated
-    // op: it has no SSA semantics and survives FIRRTL->HW lowering unchanged.
+    // The class belongs to the instantiation, so the frontend records it on
+    // the instance it elaborated. Only the top module, which has no
+    // instantiation site, records it on the module. Either way it goes on a
+    // discardable attribute: it has no SSA semantics and survives lowering.
+    auto modOp = gi.op->getParentOfType<FModuleOp>();
+    if (!instanceName && modOp.isPrivate())
+      return gi.op.emitError("circt_debug_moduleinfo: a private module is "
+                             "instantiated, so its class goes on the "
+                             "'instance' that instantiates it");
+    Operation *target = modOp;
+    if (instanceName) {
+      target = nullptr;
+      modOp.walk([&](InstanceOp inst) {
+        if (inst.getNameAttr() != instanceName)
+          return WalkResult::advance();
+        target = inst;
+        return WalkResult::interrupt();
+      });
+      if (!target)
+        return gi.op.emitError("circt_debug_moduleinfo: no instance named '")
+               << instanceName.getValue() << "' in this module";
+    }
+
     SmallVector<NamedAttribute> fields;
     fields.emplace_back(StringAttr::get(context, "typeName"), typeName);
     if (paramsStr)
       fields.emplace_back(StringAttr::get(context, "params"),
                           parseParamsJSON(context, paramsStr, gi.op));
-    auto modOp = gi.op->getParentOfType<FModuleOp>();
-    rewriter.modifyOpInPlace(modOp, [&] {
-      modOp->setAttr(debug::kDbgModuleInfoAttr,
-                     DictionaryAttr::get(context, fields));
+    rewriter.modifyOpInPlace(target, [&] {
+      target->setAttr(debug::kDbgModuleInfoAttr,
+                      DictionaryAttr::get(context, fields));
     });
     rewriter.eraseOp(gi.op);
+    return success();
   }
 };
 
