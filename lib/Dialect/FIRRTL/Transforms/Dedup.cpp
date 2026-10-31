@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAttributes.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
@@ -34,6 +35,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/SHA256.h"
+#include <atomic>
 
 #define DEBUG_TYPE "firrtl-dedup"
 
@@ -47,6 +49,21 @@ namespace firrtl {
 using namespace circt;
 using namespace firrtl;
 using hw::InnerRefAttr;
+
+/// Debug ops describe the source, not the circuit, so Dedup ignores them when
+/// hashing and comparing modules.
+static bool isDebugOp(Operation &op) {
+  return isa_and_nonnull<debug::DebugDialect>(op.getDialect());
+}
+
+/// Whether `op` contains a debug op.
+static bool hasDebugOps(Operation *op) {
+  return op
+      ->walk([](Operation *op) {
+        return isDebugOp(*op) ? WalkResult::interrupt() : WalkResult::advance();
+      })
+      .wasInterrupted();
+}
 
 //===----------------------------------------------------------------------===//
 // Utility function for classifying a Symbol's dedup-ability.
@@ -96,6 +113,12 @@ struct StructuralHasherSharedConstants {
     portNamesAttr = StringAttr::get(context, "portNames");
     nonessentialAttributes.insert(StringAttr::get(context, "annotations"));
     nonessentialAttributes.insert(StringAttr::get(context, "convention"));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgMergedFromAttr));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgModuleLocsAttr));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgModuleInfoAttr));
     nonessentialAttributes.insert(StringAttr::get(context, "inner_sym"));
     nonessentialAttributes.insert(StringAttr::get(context, "name"));
     nonessentialAttributes.insert(StringAttr::get(context, "portAnnotations"));
@@ -132,7 +155,12 @@ struct StructuralHasher {
     return {sha.final(), std::move(referredModuleNames)};
   }
 
+  /// Whether the module has debug ops. They are not hashed.
+  bool sawDebugOps() const { return skippedDebugOps; }
+
 private:
+  bool skippedDebugOps = false;
+
   /// Find all the ports and operations which may define an inner symbol
   /// operations and give each a unique id.  If the port/operation does define
   /// an inner symbol, map the symbol name to a pair of the id and the symbol's
@@ -295,8 +323,13 @@ private:
 
   // NOLINTNEXTLINE(misc-no-recursion)
   void update(Block *block) {
-    for (auto &op : llvm::reverse(*block))
+    for (auto &op : llvm::reverse(*block)) {
+      if (isDebugOp(op)) {
+        skippedDebugOps = true;
+        continue;
+      }
       update(&op);
+    }
     for (auto type : block->getArgumentTypes())
       update(type);
     update(finalizeID(block));
@@ -405,6 +438,12 @@ struct Equivalence {
     dedupGroupAttrName = StringAttr::get(context, "firrtl.dedup_group");
     portDirectionsAttr = StringAttr::get(context, "portDirections");
     nonessentialAttributes.insert(StringAttr::get(context, "annotations"));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgMergedFromAttr));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgModuleLocsAttr));
+    nonessentialAttributes.insert(
+        StringAttr::get(context, debug::kDbgModuleInfoAttr));
     nonessentialAttributes.insert(StringAttr::get(context, "name"));
     nonessentialAttributes.insert(StringAttr::get(context, "portAnnotations"));
     nonessentialAttributes.insert(StringAttr::get(context, "portNames"));
@@ -553,10 +592,13 @@ struct Equivalence {
     }
 
     // Blocks operations.
-    auto aIt = aBlock.begin();
-    auto aEnd = aBlock.end();
-    auto bIt = bBlock.begin();
-    auto bEnd = bBlock.end();
+    auto isNotDebugOp = [](Operation &op) { return !isDebugOp(op); };
+    auto aOps = llvm::make_filter_range(aBlock, isNotDebugOp);
+    auto bOps = llvm::make_filter_range(bBlock, isNotDebugOp);
+    auto aIt = aOps.begin();
+    auto aEnd = aOps.end();
+    auto bIt = bOps.begin();
+    auto bEnd = bOps.end();
     while (aIt != aEnd && bIt != bEnd)
       if (failed(check(diag, data, &*aIt++, &*bIt++)))
         return failure();
@@ -956,10 +998,10 @@ struct Deduper {
   using RenameMap = DenseMap<StringAttr, StringAttr>;
 
   Deduper(InstanceGraph &instanceGraph, SymbolTable &symbolTable,
-          NLATable *nlaTable, CircuitOp circuit)
+          NLATable *nlaTable, CircuitOp circuit, bool keepDebugInfo)
       : context(circuit->getContext()), instanceGraph(instanceGraph),
         symbolTable(symbolTable), nlaTable(nlaTable),
-        nlaBlock(circuit.getBodyBlock()),
+        keepDebugInfo(keepDebugInfo), nlaBlock(circuit.getBodyBlock()),
         nonLocalString(StringAttr::get(context, "circt.nonlocal")),
         classString(StringAttr::get(context, "class")) {
     // Populate the NLA cache.
@@ -975,6 +1017,12 @@ struct Deduper {
     // A map of operation (e.g. wires, nodes) names which are changed, which is
     // used to update NLAs that reference the "fromModule".
     RenameMap renameMap;
+    // Maps the values of the "fromModule" to their counterparts
+    // in the "toModule", used to clone its debug ops.
+    IRMapping mapping;
+
+    if (keepDebugInfo && isa<FModuleOp>(*fromModule))
+      mergeDebugOrigins(toModule, fromModule);
 
     // Merge the port locations.
     SmallVector<Attribute> newLocs;
@@ -989,7 +1037,7 @@ struct Deduper {
     toModule->setAttr("portLocations", ArrayAttr::get(context, newLocs));
 
     // Merge the two modules.
-    mergeOps(renameMap, toModule, toModule, fromModule, fromModule);
+    mergeOps(renameMap, mapping, toModule, toModule, fromModule, fromModule);
 
     // Rewrite NLAs pathing through these modules to refer to the to module. It
     // is safe to do this at this point because NLAs cannot be one element long.
@@ -1486,16 +1534,19 @@ private:
 
   /// Recursively merge two operations.
   // NOLINTNEXTLINE(misc-no-recursion)
-  void mergeOps(RenameMap &renameMap, FModuleLike toModule, Operation *to,
-                FModuleLike fromModule, Operation *from) {
+  void mergeOps(RenameMap &renameMap, IRMapping &mapping, FModuleLike toModule,
+                Operation *to, FModuleLike fromModule, Operation *from) {
     // Merge the operation locations.
     if (to->getLoc() != from->getLoc())
       to->setLoc(mergeLoc(context, to->getLoc(), from->getLoc()));
 
+    if (keepDebugInfo)
+      mapping.map(from->getResults(), to->getResults());
+
     // Recurse into any regions.
     for (auto regions : llvm::zip(to->getRegions(), from->getRegions()))
-      mergeRegions(renameMap, toModule, std::get<0>(regions), fromModule,
-                   std::get<1>(regions));
+      mergeRegions(renameMap, mapping, toModule, std::get<0>(regions),
+                   fromModule, std::get<1>(regions));
 
     // Record any inner_sym renamings that happened.
     recordSymRenames(renameMap, toModule, to, fromModule, from);
@@ -1505,26 +1556,110 @@ private:
   }
 
   /// Recursively merge two blocks.
-  void mergeBlocks(RenameMap &renameMap, FModuleLike toModule, Block &toBlock,
-                   FModuleLike fromModule, Block &fromBlock) {
+  void mergeBlocks(RenameMap &renameMap, IRMapping &mapping,
+                   FModuleLike toModule, Block &toBlock, FModuleLike fromModule,
+                   Block &fromBlock) {
     // Merge the block locations.
     for (auto [toArg, fromArg] :
          llvm::zip(toBlock.getArguments(), fromBlock.getArguments()))
       if (toArg.getLoc() != fromArg.getLoc())
         toArg.setLoc(mergeLoc(context, toArg.getLoc(), fromArg.getLoc()));
 
-    for (auto ops : llvm::zip(toBlock, fromBlock))
-      mergeOps(renameMap, toModule, &std::get<0>(ops), fromModule,
-               &std::get<1>(ops));
+    if (keepDebugInfo)
+      mapping.map(fromBlock.getArguments(), toBlock.getArguments());
+
+    // Debug ops are not compared, so only the other ops are paired.
+    // A debug op of the "fromModule" is cloned before the next paired op.
+    auto toIt = toBlock.begin();
+    for (auto &fromOp : fromBlock) {
+      while (toIt != toBlock.end() && isDebugOp(*toIt))
+        ++toIt;
+
+      if (isDebugOp(fromOp)) {
+        if (keepDebugInfo)
+          cloneDebugOp(mapping, toBlock, toIt, fromModule, fromOp);
+        continue;
+      }
+
+      assert(toIt != toBlock.end() &&
+             "equivalent modules have the same non-debug ops");
+
+      mergeOps(renameMap, mapping, toModule, &*toIt++, fromModule, &fromOp);
+    }
   }
 
   // Recursively merge two regions.
-  void mergeRegions(RenameMap &renameMap, FModuleLike toModule,
-                    Region &toRegion, FModuleLike fromModule,
-                    Region &fromRegion) {
+  void mergeRegions(RenameMap &renameMap, IRMapping &mapping,
+                    FModuleLike toModule, Region &toRegion,
+                    FModuleLike fromModule, Region &fromRegion) {
     for (auto blocks : llvm::zip(toRegion, fromRegion))
-      mergeBlocks(renameMap, toModule, std::get<0>(blocks), fromModule,
+      mergeBlocks(renameMap, mapping, toModule, std::get<0>(blocks), fromModule,
                   std::get<1>(blocks));
+  }
+
+  /// Whether `op` is a debug op that is not in an inlined scope.
+  static bool isRootDebugOp(Operation *op) {
+    if (auto varOp = dyn_cast<debug::VariableOp>(op))
+      return !varOp.getScope();
+    if (auto scopeOp = dyn_cast<debug::ScopeOp>(op))
+      return !scopeOp.getScope();
+    if (auto instOp = dyn_cast<debug::InstanceOp>(op))
+      return !instOp.getScope();
+    return false;
+  }
+
+  /// Clone a debug op of the "fromModule" into the "toModule" before `toIt`.
+  /// A root op is tagged with the module it came from,
+  /// unless an earlier dedup did that.
+  void cloneDebugOp(IRMapping &mapping, Block &toBlock, Block::iterator toIt,
+                    FModuleLike fromModule, Operation &fromOp) {
+    assert(llvm::all_of(fromOp.getOperands(),
+                        [&](Value value) { return mapping.contains(value); }) &&
+           "operands of a debug op in an equivalent module must be mapped");
+
+    OpBuilder builder(&toBlock, toIt);
+    auto *op = builder.clone(fromOp, mapping);
+
+    if (isRootDebugOp(op) && !op->hasAttr(debug::kDbgMergedFromAttr))
+      op->setAttr(debug::kDbgMergedFromAttr, fromModule.getModuleNameAttr());
+
+    auto instOp = dyn_cast<debug::InstanceOp>(op);
+    if (instOp && toIt != toBlock.end())
+      linkInstanceScope(instOp, fromOp, &*toIt);
+  }
+
+  /// An instance description precedes its instance, paired with
+  /// `toInstance`. Link the description to that instance, which may have
+  /// another name.
+  static void linkInstanceScope(debug::InstanceOp instOp, Operation &fromOp,
+                                Operation *toInstance) {
+    auto *fromNext = fromOp.getNextNode();
+    if (!fromNext || isa<debug::InstanceOp>(fromNext))
+      return;
+
+    auto fromName = fromNext->getAttrOfType<StringAttr>("name");
+    if (fromName != instOp.getLinkedName())
+      return;
+
+    auto toName = toInstance->getAttrOfType<StringAttr>("name");
+    if (toName && toName != instOp.getLinkedName())
+      instOp.setLinkageNameAttr(toName);
+  }
+
+  /// Record in `dbg.module_locs` of the "toModule"
+  /// the location of the "fromModule"
+  /// and of the modules merged into either before.
+  /// Called before the module locations are fused.
+  void mergeDebugOrigins(FModuleLike toModule, FModuleLike fromModule) {
+    auto getOrigins = [](FModuleLike moduleOp) {
+      return debug::getModuleLocs(moduleOp, moduleOp.getModuleNameAttr());
+    };
+
+    NamedAttrList origins(getOrigins(toModule));
+    for (auto origin : getOrigins(fromModule))
+      origins.set(origin.getName(), origin.getValue());
+    toModule->setAttr(debug::kDbgModuleLocsAttr,
+                      origins.getDictionary(context));
   }
 
   MLIRContext *context;
@@ -1533,6 +1668,10 @@ private:
 
   /// Cached nla table analysis.
   NLATable *nlaTable = nullptr;
+
+  /// Whether the circuit has debug info. If so, the debug info of a merged
+  /// module is kept in the module that replaces it.
+  bool keepDebugInfo = false;
 
   /// We insert all NLAs to the beginning of this block.
   Block *nlaBlock;
@@ -1635,7 +1774,6 @@ class DedupPass : public circt::firrtl::impl::DedupBase<DedupPass> {
     auto &instanceGraph = getAnalysis<InstanceGraph>();
     auto *nlaTable = &getAnalysis<NLATable>();
     auto &symbolTable = getAnalysis<SymbolTable>();
-    Deduper deduper(instanceGraph, symbolTable, nlaTable, circuit);
     Equivalence equiv(context, instanceGraph);
     auto anythingChanged = false;
     LLVM_DEBUG({
@@ -1698,13 +1836,22 @@ class DedupPass : public circt::firrtl::impl::DedupBase<DedupPass> {
     }
 
     // Calculate module information parallelly.
+    // Note on the way whether the circuit has debug info.
     LLVM_DEBUG(llvm::dbgs() << "Computing module information\n");
+    std::atomic<bool> hasDebugInfo = false;
+    // Modules that are not hashed are scanned for debug ops here.
+    auto noteDebugOps = [&](FModuleLike moduleOp) {
+      if (hasDebugOps(moduleOp))
+        hasDebugInfo = true;
+    };
     auto result = mlir::failableParallelForEach(
         context, llvm::seq(modules.size()), [&](unsigned idx) {
           auto module = modules[idx];
           // If the module is marked with NoDedup, just skip it.
-          if (AnnotationSet::hasAnnotation(module, noDedupClass))
+          if (AnnotationSet::hasAnnotation(module, noDedupClass)) {
+            noteDebugOps(module);
             return success();
+          }
 
           // Only dedup extmodule's with defname.
           if (auto ext = dyn_cast<FExtModuleOp>(*module);
@@ -1712,14 +1859,20 @@ class DedupPass : public circt::firrtl::impl::DedupBase<DedupPass> {
             return success();
 
           // Classes are nominally typed and must never be deduplicated.
-          if (isa<ClassOp>(*module))
+          if (isa<ClassOp>(*module)) {
+            noteDebugOps(module);
             return success();
+          }
 
           StructuralHasher hasher(hasherConstants);
           // Calculate the hash of the module and referred module names.
           moduleInfos[idx] = hasher.getModuleInfo(module);
+          if (hasher.sawDebugOps())
+            hasDebugInfo = true;
           return success();
         });
+    Deduper deduper(instanceGraph, symbolTable, nlaTable, circuit,
+                    hasDebugInfo);
 
     // Dump out the module hashes for debugging.
     LLVM_DEBUG({

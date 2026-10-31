@@ -118,8 +118,8 @@ passes that know nothing about debug info carry them along.
 - **`dbg.instance`** describes an instance: its source name, its
   name in the IR after renaming (`linkage`), its class and `ext`. It names the
   instance rather than using it, so it does not keep it alive. When the
-  instance is inlined, a `dbg.scope` for the inlined body can take its place
-  and keeps the class and `ext`.
+  instance is inlined, the inliner replaces it with a `dbg.scope` for the
+  inlined body, which keeps the class and `ext`.
   A pass that moves an instance to another module without moving the op,
   such as FIRRTL ExtractInstances, loses its class.
   Discardable attributes on the instance would not do: MLIR drops them when a
@@ -134,6 +134,8 @@ passes that know nothing about debug info carry them along.
   relative to the struct; `dir` on the variable gives the absolute direction.
 - **`ext`** on `dbg.instance`, `dbg.scope`, `dbg.value` and `dbg.enum` maps a language to a
   JSON string, written as `x-<lang>`.
+- **Dedup** copies the debug ops of a merged module into the survivor and marks
+  the root ops with `dbg.merged_from`.
 
 A few facts belong to a module and have no op to live on, so they are module
 attributes:

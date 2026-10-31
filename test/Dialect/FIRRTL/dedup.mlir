@@ -1,5 +1,9 @@
 // RUN: circt-opt --firrtl-dedup %s | FileCheck %s
 
+// Location aliases print before all circuits; used by "Scalar" below.
+// CHECK-DAG: #[[LOCA:loc[0-9]*]] = loc("A.scala":5:10)
+// CHECK-DAG: #[[LOCB:loc[0-9]*]] = loc("B.scala":7:12)
+
 // CHECK-LABEL: firrtl.circuit "Empty"
 firrtl.circuit "Empty" {
   // CHECK: firrtl.module private @Empty0
@@ -1020,5 +1024,324 @@ firrtl.circuit "PublicModuleNoDedup" {
   }
   firrtl.module @PublicModuleNoDedup() {
     firrtl.instance bar sym @sym @Bar_2()
+  }
+}
+
+// Debug information describes the source language, not the hardware. Modules
+// that differ only in `dbg.*` operations deduplicate.
+// Differing `dbg.struct` field names are what `-g` produces on its own: two
+// bundles of the same shape with differently named fields.
+// CHECK-LABEL: firrtl.circuit "DebugInfo"
+firrtl.circuit "DebugInfo" {
+  // CHECK: firrtl.module private @DebugInfo0
+  firrtl.module private @DebugInfo0(in %a: !firrtl.uint<8>, out %b: !firrtl.uint<8>) {
+    %w = firrtl.node %a : !firrtl.uint<8>
+    %s = dbg.struct {"a": %w, "b": %w} : !firrtl.uint<8>, !firrtl.uint<8>
+    dbg.variable "wa", %s : !dbg.struct
+    firrtl.matchingconnect %b, %w : !firrtl.uint<8>
+  }
+  // CHECK-NOT: firrtl.module private @DebugInfo1
+  firrtl.module private @DebugInfo1(in %a: !firrtl.uint<8>, out %b: !firrtl.uint<8>) {
+    %w = firrtl.node %a : !firrtl.uint<8>
+    %s = dbg.struct {"x": %w, "y": %w} : !firrtl.uint<8>, !firrtl.uint<8>
+    firrtl.matchingconnect %b, %w : !firrtl.uint<8>
+  }
+  firrtl.module @DebugInfo() {
+    // CHECK: firrtl.instance d0 {{.*}}@DebugInfo0
+    // CHECK: firrtl.instance d1 {{.*}}@DebugInfo0
+    %d0_a, %d0_b = firrtl.instance d0 @DebugInfo0(in a: !firrtl.uint<8>, out b: !firrtl.uint<8>)
+    %d1_a, %d1_b = firrtl.instance d1 @DebugInfo1(in a: !firrtl.uint<8>, out b: !firrtl.uint<8>)
+  }
+}
+
+// Debug ops present in only one module must not shift the op pairing when
+// the blocks are merged.
+// CHECK-LABEL: firrtl.circuit "DebugMisaligned"
+firrtl.circuit "DebugMisaligned" {
+  // CHECK: firrtl.module private @DbgA
+  // CHECK-NEXT: dbg.variable "extra"
+  // CHECK-NEXT: firrtl.wire sym @wsymA
+  firrtl.module private @DbgA(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>) {
+    dbg.variable "extra", %p : !firrtl.uint<8>
+    %w = firrtl.wire sym @wsymA : !firrtl.uint<8>
+    firrtl.matchingconnect %w, %p : !firrtl.uint<8>
+    firrtl.matchingconnect %q, %w : !firrtl.uint<8>
+  }
+  // CHECK-NOT: firrtl.module private @DbgB
+  firrtl.module private @DbgB(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>) {
+    %w = firrtl.wire sym @wsymB : !firrtl.uint<8>
+    firrtl.matchingconnect %w, %p : !firrtl.uint<8>
+    firrtl.matchingconnect %q, %w : !firrtl.uint<8>
+  }
+  // CHECK-NOT: firrtl.module private @DbgC
+  firrtl.module private @DbgC(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>) {
+    %w = firrtl.wire sym @wsymC : !firrtl.uint<8>
+    %s = dbg.struct {"a": %w, "b": %p} : !firrtl.uint<8>, !firrtl.uint<8>
+    dbg.variable "agg", %s : !dbg.struct
+    firrtl.matchingconnect %w, %p : !firrtl.uint<8>
+    firrtl.matchingconnect %q, %w : !firrtl.uint<8>
+  }
+  firrtl.module @DebugMisaligned(in %a: !firrtl.uint<8>, out %x: !firrtl.uint<8>, out %y: !firrtl.uint<8>, out %z: !firrtl.uint<8>) {
+    %ia_p, %ia_q = firrtl.instance ia @DbgA(in p: !firrtl.uint<8>, out q: !firrtl.uint<8>)
+    %ib_p, %ib_q = firrtl.instance ib @DbgB(in p: !firrtl.uint<8>, out q: !firrtl.uint<8>)
+    %ic_p, %ic_q = firrtl.instance ic @DbgC(in p: !firrtl.uint<8>, out q: !firrtl.uint<8>)
+    firrtl.matchingconnect %ia_p, %a : !firrtl.uint<8>
+    firrtl.matchingconnect %ib_p, %a : !firrtl.uint<8>
+    firrtl.matchingconnect %ic_p, %a : !firrtl.uint<8>
+    firrtl.matchingconnect %x, %ia_q : !firrtl.uint<8>
+    firrtl.matchingconnect %y, %ib_q : !firrtl.uint<8>
+    firrtl.matchingconnect %z, %ic_q : !firrtl.uint<8>
+  }
+}
+
+// Debug ops in nested regions and at the end of a block are skipped too, and
+// land in the same region of the kept module.
+// CHECK-LABEL: firrtl.circuit "DebugNested"
+firrtl.circuit "DebugNested" {
+  firrtl.layer @A bind {}
+  // CHECK: firrtl.module private @NestA
+  firrtl.module private @NestA(in %c: !firrtl.uint<1>, in %p: !firrtl.uint<8>) {
+    // CHECK: firrtl.when
+    firrtl.when %c : !firrtl.uint<1> {
+      // CHECK-NEXT: dbg.variable "inWhen", %p {dbg.merged_from = "NestB"}
+      // CHECK-NEXT: firrtl.node sym @nA
+      %n = firrtl.node sym @nA %p : !firrtl.uint<8>
+    }
+    // CHECK: firrtl.layerblock @A
+    firrtl.layerblock @A {
+      // CHECK-NEXT: firrtl.wire sym @wA
+      // CHECK-NEXT: dbg.variable "inLayer", %w {dbg.merged_from = "NestB"}
+      %w = firrtl.wire sym @wA : !firrtl.uint<8>
+    }
+    // CHECK: dbg.variable "last", %p {dbg.merged_from = "NestB"}
+  }
+  // CHECK-NOT: firrtl.module private @NestB
+  firrtl.module private @NestB(in %c: !firrtl.uint<1>, in %p: !firrtl.uint<8>) {
+    firrtl.when %c : !firrtl.uint<1> {
+      dbg.variable "inWhen", %p : !firrtl.uint<8>
+      %n = firrtl.node sym @nB %p : !firrtl.uint<8>
+    }
+    firrtl.layerblock @A {
+      %w = firrtl.wire sym @wB : !firrtl.uint<8>
+      dbg.variable "inLayer", %w : !firrtl.uint<8>
+    }
+    dbg.variable "last", %p : !firrtl.uint<8>
+  }
+  firrtl.module @DebugNested(in %c: !firrtl.uint<1>, in %p: !firrtl.uint<8>) {
+    // CHECK: firrtl.instance a {{.*}}@NestA
+    // CHECK: firrtl.instance b {{.*}}@NestA
+    %a_c, %a_p = firrtl.instance a @NestA(in c: !firrtl.uint<1>, in p: !firrtl.uint<8>)
+    %b_c, %b_p = firrtl.instance b @NestB(in c: !firrtl.uint<1>, in p: !firrtl.uint<8>)
+    firrtl.matchingconnect %a_c, %c : !firrtl.uint<1>
+    firrtl.matchingconnect %a_p, %p : !firrtl.uint<8>
+    firrtl.matchingconnect %b_c, %c : !firrtl.uint<1>
+    firrtl.matchingconnect %b_p, %p : !firrtl.uint<8>
+  }
+}
+
+// The debug ops of a merged module are cloned into the module that replaces
+// it. Root ops record the merged module in `dbg.merged_from`, and the kept
+// module records the location of every module in `dbg.module_locs`. Instances
+// get no attributes: their scopes still name the module they stood for.
+// CHECK-LABEL: firrtl.circuit "Scalar"
+firrtl.circuit "Scalar" {
+  // CHECK:      firrtl.module private @A(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>)
+  // CHECK-SAME:     attributes {dbg.module_locs = {A = #[[LOCA]], B = #[[LOCB]]}}
+  // CHECK-NEXT:   %w = firrtl.node %p
+  // CHECK-NEXT:   dbg.variable "alpha", %w : !firrtl.uint<8>
+  // CHECK-NEXT:   dbg.variable "beta", %w {dbg.merged_from = "B"} : !firrtl.uint<8>
+  // CHECK-NEXT:   dbg.variable "port", %p {dbg.merged_from = "B"} : !firrtl.uint<8>
+  // CHECK-NEXT:   firrtl.matchingconnect %q, %w
+  firrtl.module private @A(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>) {
+    %w = firrtl.node %p : !firrtl.uint<8>
+    dbg.variable "alpha", %w : !firrtl.uint<8>
+    firrtl.matchingconnect %q, %w : !firrtl.uint<8>
+  } loc("A.scala":5:10)
+  // CHECK-NOT: firrtl.module private @B
+  firrtl.module private @B(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>) {
+    %w = firrtl.node %p : !firrtl.uint<8>
+    dbg.variable "beta", %w : !firrtl.uint<8>
+    dbg.variable "port", %p : !firrtl.uint<8>
+    firrtl.matchingconnect %q, %w : !firrtl.uint<8>
+  } loc("B.scala":7:12)
+  // CHECK: firrtl.module @Scalar
+  firrtl.module @Scalar() {
+    // CHECK-NEXT: dbg.instance "a", "A"
+    // CHECK-NEXT: firrtl.instance a @A
+    // CHECK-NEXT: dbg.instance "b", "B"
+    // CHECK-NEXT: firrtl.instance b @A
+    dbg.instance "a", "A"
+    firrtl.instance a @A(in p: !firrtl.uint<8>, out q: !firrtl.uint<8>)
+    dbg.instance "b", "B"
+    firrtl.instance b @B(in p: !firrtl.uint<8>, out q: !firrtl.uint<8>)
+  }
+}
+
+// A chain of debug ops is cloned with its operands remapped; only the root op
+// is tagged.
+// CHECK-LABEL: firrtl.circuit "Aggregate"
+firrtl.circuit "Aggregate" {
+  // CHECK:      firrtl.module private @A(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>)
+  // CHECK-NEXT:   %w = firrtl.wire
+  // CHECK-NEXT:   [[V:%.+]] = dbg.value %w : !firrtl.uint<8>
+  // CHECK-NEXT:   [[S:%.+]] = dbg.struct {"x": [[V]], "y": %p}
+  // CHECK-NEXT:   dbg.variable "io", [[S]] {dbg.merged_from = "B"}
+  // CHECK-NEXT:   firrtl.matchingconnect %w, %p
+  firrtl.module private @A(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>) {
+    %w = firrtl.wire : !firrtl.uint<8>
+    firrtl.matchingconnect %w, %p : !firrtl.uint<8>
+    firrtl.matchingconnect %q, %w : !firrtl.uint<8>
+  }
+  // CHECK-NOT: firrtl.module private @B
+  firrtl.module private @B(in %p: !firrtl.uint<8>, out %q: !firrtl.uint<8>) {
+    %w = firrtl.wire : !firrtl.uint<8>
+    %v = dbg.value %w : !firrtl.uint<8>
+    %s = dbg.struct {"x": %v, "y": %p} : !dbg.value, !firrtl.uint<8>
+    dbg.variable "io", %s : !dbg.struct
+    firrtl.matchingconnect %w, %p : !firrtl.uint<8>
+    firrtl.matchingconnect %q, %w : !firrtl.uint<8>
+  }
+  firrtl.module @Aggregate() {
+    firrtl.instance a @A(in p: !firrtl.uint<8>, out q: !firrtl.uint<8>)
+    firrtl.instance b @B(in p: !firrtl.uint<8>, out q: !firrtl.uint<8>)
+  }
+}
+
+// A merged module that kept another one before passes on its tags and its
+// `dbg.module_locs`.
+// CHECK-LABEL: firrtl.circuit "DebugChain"
+firrtl.circuit "DebugChain" {
+  // CHECK:      firrtl.module private @A()
+  // CHECK-SAME:   dbg.module_locs = {A = {{.+}}, B = {{.+}}, D = #[[LOCD:loc[0-9]*]]}
+  // CHECK-NEXT:   firrtl.constant
+  // CHECK-NEXT:   dbg.variable "a", {{%.+}} : !firrtl.uint<1>
+  // CHECK-NEXT:   dbg.variable "b", {{%.+}} {dbg.merged_from = "B"}
+  // CHECK-NEXT:   dbg.variable "d", {{%.+}} {dbg.merged_from = "D"}
+  firrtl.module private @A() {
+    %c = firrtl.constant 0 : !firrtl.uint<1>
+    dbg.variable "a", %c : !firrtl.uint<1>
+  }
+  // CHECK-NOT: firrtl.module private @B
+  firrtl.module private @B() attributes {
+      dbg.module_locs = {B = loc("B.scala":1:1), D = loc("D.scala":1:1)}} {
+    %c = firrtl.constant 0 : !firrtl.uint<1>
+    dbg.variable "b", %c : !firrtl.uint<1>
+    dbg.variable "d", %c {dbg.merged_from = "D"} : !firrtl.uint<1>
+  }
+  firrtl.module @DebugChain() {
+    firrtl.instance a @A()
+    firrtl.instance b @B()
+  }
+}
+
+// Nested dedup: S2 merges into S1 first, then P2 into P1. The scope of the
+// instance in P2 is cloned into P1 and still says that it stood for S2.
+// CHECK-LABEL: firrtl.circuit "Nested"
+firrtl.circuit "Nested" {
+  // CHECK: firrtl.module private @S1
+  // CHECK: dbg.variable "s2var", {{%.+}} {dbg.merged_from = "S2"}
+  firrtl.module private @S1(in %p: !firrtl.uint<8>) {
+    dbg.variable "s1var", %p : !firrtl.uint<8>
+  }
+  // CHECK-NOT: firrtl.module private @S2
+  firrtl.module private @S2(in %p: !firrtl.uint<8>) {
+    dbg.variable "s2var", %p : !firrtl.uint<8>
+  }
+  // CHECK:      firrtl.module private @P1
+  // CHECK-NEXT:   dbg.instance "s", "S1" typeName "ClsS1"
+  // CHECK-NEXT:   dbg.instance "s", "S2" typeName "ClsS2" {dbg.merged_from = "P2"}
+  // CHECK-NEXT:   firrtl.instance s @S1
+  // CHECK:        dbg.variable "p2var", {{%.+}} {dbg.merged_from = "P2"}
+  firrtl.module private @P1(in %p: !firrtl.uint<8>) {
+    dbg.instance "s", "S1" typeName "ClsS1"
+    %s_p = firrtl.instance s @S1(in p: !firrtl.uint<8>)
+    firrtl.matchingconnect %s_p, %p : !firrtl.uint<8>
+    dbg.variable "p1var", %p : !firrtl.uint<8>
+  }
+  // CHECK-NOT: firrtl.module private @P2
+  firrtl.module private @P2(in %p: !firrtl.uint<8>) {
+    dbg.instance "s", "S2" typeName "ClsS2"
+    %s_p = firrtl.instance s @S2(in p: !firrtl.uint<8>)
+    firrtl.matchingconnect %s_p, %p : !firrtl.uint<8>
+    dbg.variable "p2var", %p : !firrtl.uint<8>
+  }
+  // CHECK:      firrtl.module @Nested
+  // CHECK-NEXT:   dbg.instance "i1", "P1"
+  // CHECK-NEXT:   firrtl.instance i1 @P1
+  // CHECK-NEXT:   dbg.instance "i2", "P2"
+  // CHECK-NEXT:   firrtl.instance i2 @P1
+  firrtl.module @Nested(in %a: !firrtl.uint<8>) {
+    dbg.instance "i1", "P1"
+    %i1_p = firrtl.instance i1 @P1(in p: !firrtl.uint<8>)
+    dbg.instance "i2", "P2"
+    %i2_p = firrtl.instance i2 @P2(in p: !firrtl.uint<8>)
+    firrtl.matchingconnect %i1_p, %a : !firrtl.uint<8>
+    firrtl.matchingconnect %i2_p, %a : !firrtl.uint<8>
+  }
+}
+
+// The scope of an instance links to the instance it is merged into when the
+// names differ. Memories are linked the same way.
+// CHECK-LABEL: firrtl.circuit "Renamed"
+firrtl.circuit "Renamed" {
+  firrtl.module private @S() {}
+  // CHECK:      firrtl.module private @A
+  // CHECK-NEXT:   dbg.instance "sub", "S"
+  // CHECK-NEXT:   dbg.instance "child", "S" linkage "sub" typeName "Cls" {dbg.merged_from = "B"}
+  // CHECK-NEXT:   firrtl.instance sub @S
+  // CHECK-NEXT:   dbg.instance "m"
+  // CHECK-NEXT:   dbg.instance "n" linkage "m" {dbg.merged_from = "B"}
+  // CHECK-NEXT:   firrtl.mem
+  // CHECK-SAME:     name = "m"
+  firrtl.module private @A() {
+    dbg.instance "sub", "S"
+    firrtl.instance sub @S()
+    dbg.instance "m"
+    %m_r = firrtl.mem Undefined {depth = 4 : i64, name = "m", portNames = ["r"], readLatency = 0 : i32, writeLatency = 1 : i32} : !firrtl.bundle<addr: uint<2>, en: uint<1>, clk: clock, data flip: uint<8>>
+  }
+  // CHECK-NOT: firrtl.module private @B
+  firrtl.module private @B() {
+    dbg.instance "child", "S" typeName "Cls"
+    firrtl.instance child @S()
+    dbg.instance "n"
+    %n_r = firrtl.mem Undefined {depth = 4 : i64, name = "n", portNames = ["r"], readLatency = 0 : i32, writeLatency = 1 : i32} : !firrtl.bundle<addr: uint<2>, en: uint<1>, clk: clock, data flip: uint<8>>
+  }
+  firrtl.module @Renamed() {
+    firrtl.instance a @A()
+    firrtl.instance b @B()
+  }
+}
+
+// Without debug info nothing is recorded.
+// CHECK-LABEL: firrtl.circuit "NoDebugInfo"
+firrtl.circuit "NoDebugInfo" {
+  // CHECK-NOT: dbg.merged_from
+  firrtl.module private @A() {}
+  firrtl.module private @B() {}
+  firrtl.module @NoDebugInfo() {
+    firrtl.instance a @A()
+    firrtl.instance b @B()
+  }
+}
+
+// The class of a public module does not keep it from deduping
+// with a private module: each keeps its own class.
+// CHECK-LABEL: firrtl.circuit "ModuleInfo"
+firrtl.circuit "ModuleInfo" {
+  // CHECK: firrtl.module @Other({{.*}}) attributes {{{.*}}dbg.moduleinfo = {name = "Other"}}
+  firrtl.module @Other(in %p: !firrtl.uint<8>) attributes {dbg.moduleinfo = {name = "Other"}} {
+    dbg.variable "p", %p : !firrtl.uint<8>
+  }
+  // CHECK-NOT: firrtl.module private @Copy
+  firrtl.module private @Copy(in %p: !firrtl.uint<8>) {
+    dbg.variable "p", %p : !firrtl.uint<8>
+  }
+  // CHECK: firrtl.module @ModuleInfo
+  firrtl.module @ModuleInfo(in %p: !firrtl.uint<8>) {
+    // CHECK-NEXT: dbg.instance "c", "Copy" typeName "Cls"
+    // CHECK-NEXT: firrtl.instance c @Other
+    dbg.instance "c", "Copy" typeName "Cls"
+    %c_p = firrtl.instance c @Copy(in p: !firrtl.uint<8>)
+    firrtl.matchingconnect %c_p, %p : !firrtl.uint<8>
   }
 }

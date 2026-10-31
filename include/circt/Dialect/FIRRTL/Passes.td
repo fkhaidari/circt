@@ -151,6 +151,10 @@ def Inliner : Pass<"firrtl-inliner", "firrtl::CircuitOp"> {
     flatten.  Inlined entities keep their names, prefixed with the instance
     name.
 
+    With debug info, the `dbg.scope` of an inlined instance becomes
+    an inline scope that holds the debug ops of the inlined body.
+    `dbg.module_locs` records where the inlined module was defined.
+
     Modules with no remaining use, whether arriving unused or inlined away, are
     erased.  Modules referenced by symbol, or instantiated by an operation the
     pass cannot inline through (e.g., `firrtl.instance_choice`), are retained.
@@ -279,6 +283,11 @@ def Dedup : Pass<"firrtl-dedup", "firrtl::CircuitOp"> {
     fields are legally connected. Deduplicated modules will have their
     annotations merged, which tends to create many non-local annotations.
     Classes are nominally typed and are never deduplicated.
+
+    Debug ops do not take part in the comparison.
+    The debug ops of a merged module are copied into the survivor
+    and marked with `dbg.merged_from`.
+    `dbg.module_locs` on the survivor records the modules merged into it.
   }];
   let statistics = [
     Statistic<"erasedModules", "num-erased-modules",
