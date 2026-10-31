@@ -384,3 +384,41 @@ firrtl.circuit "NestedBaseInnerSym" {
     %w = firrtl.wire sym [<@sym, 0, public>, <@sym_b, 2, public>, <@sym_c, 3, public>] : !firrtl.openbundle<a: probe<uint<1>>, b: bundle<c: uint<1>>, d: probe<uint<1>>>
   }
 }
+
+// -----
+
+// Debug metadata on a port or wire with no HW part is dropped with it.
+// Metadata on a declaration that keeps a HW part stays.
+// CHECK-LABEL: circuit "DebugMetaNoHW"
+firrtl.circuit "DebugMetaNoHW" {
+  // CHECK: firrtl.module @DebugMetaNoHW
+  firrtl.module @DebugMetaNoHW(out %io: !firrtl.openbundle<p: probe<uint<8>>>,
+                               out %mixed: !firrtl.openbundle<a: uint<8>, p: probe<uint<8>>>) {
+    %w = firrtl.wire : !firrtl.openbundle<p: probe<uint<8>>>
+    // CHECK-NOT: circt_debug_type" <target: none = "io"
+    firrtl.int.generic "circt_debug_type" <target: none = "io", name: none = "OnlyProbes"> : () -> ()
+    // CHECK-NOT: circt_debug_enum" <target: none = "w"
+    firrtl.int.generic "circt_debug_enum" <target: none = "w", path: none = ".p", variant_A: ui32 = 0> : () -> ()
+    // CHECK: circt_debug_type" <target: none = "mixed"
+    firrtl.int.generic "circt_debug_type" <target: none = "mixed", name: none = "Mixed"> : () -> ()
+  }
+}
+
+// -----
+
+// Debug metadata on a probe field is dropped with it. A path that names no
+// field stays, for MaterializeDebugInfo to reject.
+// CHECK-LABEL: circuit "DebugMetaField"
+firrtl.circuit "DebugMetaField" {
+  // CHECK: firrtl.module @DebugMetaField
+  firrtl.module @DebugMetaField(out %mixed: !firrtl.openbundle<a: uint<8>, p: probe<uint<8>>, v: openvector<openbundle<p: probe<uint<8>>, d: uint<8>>, 2>>) {
+    // CHECK-NOT: path: none = ".p"
+    firrtl.int.generic "circt_debug_type" <target: none = "mixed", path: none = ".p", name: none = "Probe"> : () -> ()
+    // CHECK-NOT: path: none = ".v[*].p"
+    firrtl.int.generic "circt_debug_type" <target: none = "mixed", path: none = ".v[*].p", name: none = "Probe"> : () -> ()
+    // CHECK: path: none = ".v[*].d"
+    firrtl.int.generic "circt_debug_type" <target: none = "mixed", path: none = ".v[*].d", name: none = "Data"> : () -> ()
+    // CHECK: path: none = ".typo"
+    firrtl.int.generic "circt_debug_type" <target: none = "mixed", path: none = ".typo", name: none = "Typo"> : () -> ()
+  }
+}

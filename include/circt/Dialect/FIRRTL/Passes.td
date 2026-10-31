@@ -680,6 +680,10 @@ def LowerOpenAggs : Pass<"firrtl-lower-open-aggs", "firrtl::CircuitOp"> {
   let description = [{
      This pass lowers aggregates of the more open varieties into their equivalents
      using only hardware types, by pulling out non-hardware to other locations.
+
+     It also erases `circt_debug_type` and `circt_debug_enum` intrinsics
+     whose path goes through a pulled-out field:
+     that field no longer exists in the aggregate.
   }];
 }
 

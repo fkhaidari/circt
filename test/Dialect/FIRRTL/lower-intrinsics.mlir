@@ -266,4 +266,27 @@ firrtl.circuit "Foo" {
 
     // CHECK: firrtl.view "view2", yaml "views.yml", <{
   }
+
+  firrtl.module private @DebugTypeChild() {}
+
+  // Without debug info, a record for an instance or for the module is checked
+  // and dropped. A second record is not caught: that needs the targets.
+  // CHECK-LABEL: firrtl.module @DebugTypeNoDebug() {
+  // CHECK-NEXT: firrtl.instance c0 @DebugTypeChild()
+  // CHECK-NEXT: }
+  firrtl.module @DebugTypeNoDebug() {
+    firrtl.int.generic "circt_debug_type" <name: none = "Top"> : () -> ()
+    firrtl.int.generic "circt_debug_type" <name: none = "Top2"> : () -> ()
+    firrtl.instance c0 @DebugTypeChild()
+    firrtl.int.generic "circt_debug_type" <target: none = "c0", name: none = "Child", ext_chisel: none = "{}"> : () -> ()
+    firrtl.int.generic "circt_debug_type" <target: none = "c0", name: none = "Child1"> : () -> ()
+  }
+
+  // Without debug info, the metadata of a declaration is dropped unchecked.
+  // CHECK-LABEL: firrtl.module @DebugMeta
+  // CHECK-NEXT: }
+  firrtl.module @DebugMeta() {
+    firrtl.int.generic "circt_debug_type" <target: none = "x", name: none = "Bool"> : () -> ()
+    firrtl.int.generic "circt_debug_enum" <target: none = "x", name: none = "S", variant_A: ui32 = 0> : () -> ()
+  }
 }

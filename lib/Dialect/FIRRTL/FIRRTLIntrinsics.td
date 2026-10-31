@@ -793,6 +793,65 @@ def CirctDPICall : FIRRTLIntrinsic {
   }];
 }
 
+def CirctDebugType : FIRRTLIntrinsic {
+  let mnemonic = "circt.debug_type";
+  let converter = "CirctDebugMetaConverter";
+  let description = [{
+    Gives a declaration, or a node inside its type, a source-language type
+    name and data only the source language knows, for debug info.
+    MaterializeDebugInfo consumes it. Without debug info it is dropped.
+
+    | Parameter    | Type   | Description                                      |
+    | ------------ | ------ | ------------------------------------------------ |
+    | target       | string | Port, wire, node, register, memory or instance.  |
+    |              |        | Optional, see below.                             |
+    | path         | string | Node inside the type of `target`. Optional.      |
+    | name         | string | Name of the source type. Optional.               |
+    | ext_\<lang\> | string | JSON for language `<lang>`, passed through to    |
+    |              |        | debug info unread. Optional, any number.         |
+
+    At least one of `name` and `ext_<lang>` is required.
+    Any other parameter is an error.
+    A `path` is a sequence of `.<field>` for a bundle field
+    and `[*]` for every element of a vector, e.g. `.v[*].x`.
+    An empty path is `target` itself.
+
+    The type of an instance is the class its module was elaborated from.
+    It belongs to the instance, not to the module:
+    dedup may merge two classes into one module.
+    An instance takes no `path`.
+    An `instance_choice` is not supported yet.
+
+    Without `target` the record is for the enclosing module,
+    which must be public, since a private module has an instance to carry it.
+    It takes no `path`.
+
+    On a memory the intrinsic is accepted but has no effect yet:
+    debug info does not carry the type of memory contents.
+
+    Without debug info only what the intrinsic says by itself is checked,
+    not whether `target` exists or gets two records.
+  }];
+}
+
+def CirctDebugEnum : FIRRTLIntrinsic {
+  let mnemonic = "circt.debug_enum";
+  let converter = "CirctDebugMetaConverter";
+  let description = [{
+    Marks an unsigned integer declaration, or a node inside its type, as an
+    enumeration, for debug info. MaterializeDebugInfo consumes it. Without
+    debug info it is dropped.
+
+    | Parameter     | Type   | Description                                     |
+    | ------------- | ------ | ----------------------------------------------- |
+    | target        | string | Port, wire, node, register or memory.           |
+    | path          | string | As for `circt_debug_type`. Optional.            |
+    | name          | string | Name of the enumeration.                        |
+    | variant_\<V\> | int    | Value of variant `V`. At least one.             |
+    | ext_\<lang\>  | string | As for `circt_debug_type`.                      |
+  }];
+}
+
 def View : FIRRTLIntrinsic {
   let mnemonic = "circt.view";
   let description = [{

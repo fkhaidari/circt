@@ -104,9 +104,11 @@ when the Verilog behind it is shared.
 
 The class a module was elaborated from goes in `name` on the `module` type of
 the instance, not on the module. Dedup merges modules whose bodies match even
-when their classes differ, so the class has to stay with each instance. A public
-module can be a top with no instance, so its class can also go on its
-`original` entry.
+when their classes differ, so the class has to stay with each instance. A
+`circt_debug_type` intrinsic that targets an instance gives its class. A public
+module can be a top with no instance, so a `circt_debug_type` without a target
+gives its class on its `original` entry. A public module that is also
+instantiated can have both; they land in different places.
 
 ## What the debug dialect carries
 
