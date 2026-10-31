@@ -128,8 +128,8 @@ passes that know nothing about debug info carry them along.
   `mem`, `node`) and the port direction. They describe the declaration, not the
   value, as DWARF puts them on the variable entry.
 - **`kind` on `dbg.value`** keeps what lowering erases from a ground type:
-  `clock`, `reset`, `asyncreset` or `sint`. It becomes the `kind` of the
-  value's type in `types`.
+  `clock`, `reset`, `asyncreset` or `sint`. After FIRRTL InferResets, `reset`
+  is synchronous. It becomes the `kind` of the value's type in `types`.
 - **`flips` on `dbg.struct`** marks the flipped fields of a bundle. A flip is
   relative to the struct; `dir` on the variable gives the absolute direction.
 - **`ext`** on `dbg.instance`, `dbg.scope`, `dbg.value` and `dbg.enum` maps a language to a

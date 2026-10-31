@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Analysis/FIRRTLInstanceInfo.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOpInterfaces.h"
@@ -921,6 +922,15 @@ LogicalResult InferResetsPass::updateReset(ResetNetwork net, ResetKind kind) {
   // subaccess operations to be updated as appropriate.
   while (!worklist.empty()) {
     auto *wop = worklist.pop_back_val();
+
+    // Keep the reset kind in debug info in sync with the inferred type.
+    if (auto valueOp = dyn_cast<debug::ValueOp>(wop)) {
+      if (valueOp.getKind())
+        valueOp.setKind(kind == ResetKind::Async ? debug::ValueKind::AsyncReset
+                                                 : debug::ValueKind::Reset);
+      continue;
+    }
+
     SmallVector<Type, 2> types;
     if (auto op = dyn_cast<InferTypeOpInterface>(wop)) {
       // Determine the new result types.

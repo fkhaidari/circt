@@ -79,7 +79,7 @@ firrtl.circuit "Test" {
 
   // CHECK:      hw.hierpath private @[[CaptureHardware_c0_ui1_path:.+]] [@CaptureHardware::@[[CaptureHardware_c0_ui1_sym:.+]]]
   // CHECK-NEXT: hw.hierpath private @[[CaptureHardware_c1_ui1_path:.+]] [@CaptureHardware::@[[CaptureHardware_c1_ui1_sym:.+]]]
-  // CHECK-NEXT: firrtl.module private @CaptureHardware_A() {
+  // CHECK-NEXT: firrtl.module private @CaptureHardware_A() attributes {dbg.artificial} {
   // CHECK-NEXT:   %[[c1_ui1:.+]] = firrtl.xmr.deref @[[CaptureHardware_c1_ui1_path]] : !firrtl.uint<1>
   // CHECK-NEXT:   %[[c0_ui1:.+]] = firrtl.xmr.deref @[[CaptureHardware_c0_ui1_path]] : !firrtl.uint<1>
   // CHECK-NEXT:   firrtl.add %[[c0_ui1]], %[[c1_ui1]] : (!firrtl.uint<1>, !firrtl.uint<1>) -> !firrtl.uint<2>
@@ -100,12 +100,12 @@ firrtl.circuit "Test" {
   }
 
   // CHECK:      hw.hierpath private @[[CaptureCaching_c1_ui1_path:.+]] [@CaptureCaching::@[[CaptureCaching_c1_ui1_sym:.+]]]
-  // CHECK-NEXT: firrtl.module private @CaptureCaching_A_B() {
+  // CHECK-NEXT: firrtl.module private @CaptureCaching_A_B() attributes {dbg.artificial} {
   // CHECK-NEXT:   %[[c1_ui1:.+]] = firrtl.xmr.deref @[[CaptureCaching_c1_ui1_path]] : !firrtl.uint<1>
   // CHECK-NEXT:   firrtl.not %[[c1_ui1]]
   // CHECK-NEXT:   firrtl.not %[[c1_ui1]]
   // CHECK-NEXT: }
-  // CHECK-NEXT: firrtl.module private @CaptureCaching_A() {
+  // CHECK-NEXT: firrtl.module private @CaptureCaching_A() attributes {dbg.artificial} {
   // CHECK-NEXT:   %[[c1_ui1:.+]] = firrtl.xmr.deref @[[CaptureCaching_c1_ui1_path]] : !firrtl.uint<1>
   // CHECK-NEXT:   firrtl.not %[[c1_ui1]]
   // CHECK-NEXT:   firrtl.not %[[c1_ui1]]
@@ -127,7 +127,7 @@ firrtl.circuit "Test" {
   }
 
   // CHECK: hw.hierpath private @[[CapturePort_port_path:.+]] [@CapturePort::@[[CapturePort_port_sym:.+]]]
-  // CHECK: firrtl.module private @CapturePort_A() {
+  // CHECK: firrtl.module private @CapturePort_A() attributes {dbg.artificial} {
   // CHECK:   %[[port:.+]] = firrtl.xmr.deref @[[CapturePort_port_path]] : !firrtl.uint<1>
   // CHECK:   %x = firrtl.node %[[port]] : !firrtl.uint<1>
   // CHECK: }
@@ -198,7 +198,7 @@ firrtl.circuit "Test" {
   // CHECK-NEXT:   %0 = firrtl.xmr.deref @[[NestedCapture_x_path]]
   // CHECK-NEXT:   %1 = firrtl.node %0 : !firrtl.uint<1>
   // CHECK-NEXT: }
-  // CHECK-NEXT: firrtl.module private @NestedCapture_A() {
+  // CHECK-NEXT: firrtl.module private @NestedCapture_A() attributes {dbg.artificial} {
   // CHECK-NEXT:   %x = firrtl.wire sym @[[NestedCapture_a_sym]] : !firrtl.uint<1>
   // CHECK-NEXT: }
   // CHECK-NEXT: firrtl.module @NestedCapture() {
@@ -240,7 +240,7 @@ firrtl.circuit "Test" {
   // avoid capturing non-passive types.
   //
   // CHECK:      hw.hierpath private @[[SubOpsInLayerBlock_sub_path:.+]] [@SubOpsInLayerBlock::@[[SubOpsInLayerBlock_sub_sym:.+]]]
-  // CHECK-NEXT: firrtl.module private @SubOpsInLayerBlock_A() {
+  // CHECK-NEXT: firrtl.module private @SubOpsInLayerBlock_A() attributes {dbg.artificial} {
   // CHECK-NEXT:   %0 = firrtl.xmr.deref @[[SubOpsInLayerBlock_sub_path]]
   // CHECK-NEXT:   firrtl.node %0
   // CHECK-NEXT: }
@@ -266,7 +266,7 @@ firrtl.circuit "Test" {
   //
   // CHECK:      hw.hierpath private @[[vec_path:.+]] [@SubOpsCapturingPassiveInput::@[[vec_sym:.+]]]
   // CHECK-NEXT: hw.hierpath private @[[bun_path:.+]] [@SubOpsCapturingPassiveInput::@[[bun_sym:.+]]]
-  // CHECK-NEXT: firrtl.module private @SubOpsCapturingPassiveInput_A() {
+  // CHECK-NEXT: firrtl.module private @SubOpsCapturingPassiveInput_A() attributes {dbg.artificial} {
   // CHECK-NEXT:   %0 = firrtl.xmr.deref @[[bun_path]] : !firrtl.bundle<a: uint<1>>
   // CHECK-NEXT:   %1 = firrtl.xmr.deref @[[vec_path]] : !firrtl.vector<uint<1>, 1>
   // CHECK-NEXT:   %2 = firrtl.subindex %1[0] : !firrtl.vector<uint<1>, 1>
@@ -291,7 +291,7 @@ firrtl.circuit "Test" {
   //
   // CHECK:      hw.hierpath private @[[input_path:.+]] [@SubaccessOpCapturingPassiveInput::@[[input_sym:.+]]]
   // CHECK-NEXT: hw.hierpath private @[[index_path:.+]] [@SubaccessOpCapturingPassiveInput::@[[index_sym:.+]]]
-  // CHECK-NEXT: firrtl.module private @SubaccessOpCapturingPassiveInput_A() {
+  // CHECK-NEXT: firrtl.module private @SubaccessOpCapturingPassiveInput_A() attributes {dbg.artificial} {
   // CHECK-NEXT:  %0 = firrtl.xmr.deref @[[index_path]] : !firrtl.uint<1>
   // CHECK-NEXT:  %1 = firrtl.xmr.deref @[[input_path]] : !firrtl.vector<uint<1>, 2>
   // CHECK-NEXT:  %2 = firrtl.subaccess %1[%0] : !firrtl.vector<uint<1>, 2>, !firrtl.uint<1>
@@ -312,7 +312,7 @@ firrtl.circuit "Test" {
 
   // CHECK:      hw.hierpath private @[[CaptureWhen2_a_path:.+]] [@CaptureWhen2::@[[CaptureWhen2_a_sym:.+]]]
   // CHECK-NEXT: hw.hierpath private @[[CaptureWhen2_cond_path:.+]] [@CaptureWhen2::@[[CaptureWhen2_cond_sym:.+]]]
-  // CHECK-NEXT: firrtl.module private @CaptureWhen2_A() {
+  // CHECK-NEXT: firrtl.module private @CaptureWhen2_A() attributes {dbg.artificial} {
   // CHECK-NEXT:   %0 = firrtl.xmr.deref @[[CaptureWhen2_cond_path]]
   // CHECK-NEXT:   %1 = firrtl.xmr.deref @[[CaptureWhen2_a_path]]
   // CHECK-NEXT:   firrtl.when %0 {{.*}} {
@@ -332,7 +332,7 @@ firrtl.circuit "Test" {
 
   // Capture of a zero-width value creates a local zero-width constant zero.
   //
-  // CHECK:      firrtl.module private @ZeroWidthCapture_A() {
+  // CHECK:      firrtl.module private @ZeroWidthCapture_A() attributes {dbg.artificial} {
   // CHECK-NEXT:   %c0_ui0 = firrtl.constant 0 : !firrtl.uint<0>
   // CHECK-NEXT:   %b = firrtl.node %c0_ui0 : !firrtl.uint<0>
   // CHECK-NEXT: }
@@ -350,7 +350,7 @@ firrtl.circuit "Test" {
   //
   // CHECK:      hw.hierpath private @[[InstancePortCapture_ext_a_path:.+]] [@InstancePortCapture::@[[InstancePortCapture_ext_a_sym:.+]]]
   // CHECK-NEXT: hw.hierpath private @[[InstancePortCapture_ext_b_path:.+]] [@InstancePortCapture::@[[InstancePortCapture_ext_b_sym:.+]]]
-  // CHECK-NEXT: firrtl.module private @InstancePortCapture_A() {
+  // CHECK-NEXT: firrtl.module private @InstancePortCapture_A() attributes {dbg.artificial} {
   // CHECK-NEXT:   %0 = firrtl.xmr.deref @[[InstancePortCapture_ext_b_path]]
   // CHECK-NEXT:   %1 = firrtl.xmr.deref @[[InstancePortCapture_ext_a_path]]
   // CHECK-NEXT:   %a = firrtl.node %1
@@ -390,7 +390,7 @@ firrtl.circuit "Test" {
   //
   // CHECK:      hw.hierpath private @[[path_reset:.+]] [@InstanceInputPortCapture::@[[sym_reset:.+]]]
   // CHECK-NEXT: hw.hierpath private @[[path_clock:.+]] [@InstanceInputPortCapture::@[[sym_clock:.+]]]
-  // CHECK-NEXT: firrtl.module private @InstanceInputPortCapture_A() {
+  // CHECK-NEXT: firrtl.module private @InstanceInputPortCapture_A() attributes {dbg.artificial} {
   // CHECK-NEXT:   %[[xmr_clock:.+]] = firrtl.xmr.deref @[[path_clock]]
   // CHECK-NEXT:   %[[xmr_reset:.+]] = firrtl.xmr.deref @[[path_reset]]
   // CHECK-NEXT:   %wire_reset = firrtl.wire
@@ -631,7 +631,7 @@ firrtl.circuit "Test" {
 
   // An FString operation is outside the layer block.  This needs to be cloned.
   //
-  // CHECK: firrtl.module private @[[A:.+]]() {
+  // CHECK: firrtl.module private @[[A:.+]]() attributes {dbg.artificial} {
   // CHECK:   %time = firrtl.fstring.time
   // CHECK:   firrtl.printf %clock, %c1_ui1, "{{.*}}" (%time)
   // CHECK: }
@@ -684,15 +684,15 @@ firrtl.circuit "Test" {
     }
   }
 
-  // CHECK:      firrtl.module private @ModuleWithInlineLayerBlocks_Inline_Bound() {
+  // CHECK:      firrtl.module private @ModuleWithInlineLayerBlocks_Inline_Bound() attributes {dbg.artificial} {
   // CHECK-NEXT:   %w3 = firrtl.wire : !firrtl.uint<3>
   // CHECK-NEXT: }
 
-  // CHECK:      firrtl.module private @ModuleWithInlineLayerBlocks_Bound_Inline_Bound() {
+  // CHECK:      firrtl.module private @ModuleWithInlineLayerBlocks_Bound_Inline_Bound() attributes {dbg.artificial} {
   // CHECK-NEXT:   %w6 = firrtl.wire : !firrtl.uint<6>
   // CHECK-NEXT: }
 
-  // CHECK:      firrtl.module private @ModuleWithInlineLayerBlocks_Bound() {
+  // CHECK:      firrtl.module private @ModuleWithInlineLayerBlocks_Bound() attributes {dbg.artificial} {
   // CHECK-NEXT:   %w4 = firrtl.wire
   // CHECK-NEXT:   sv.ifdef @layer$Bound$Inline {
   // CHECK-NEXT:     %w5 = firrtl.wire
@@ -764,7 +764,7 @@ firrtl.circuit "Simple" {
 //
 // CHECK: hw.hierpath private @[[Simple_A_B_cc_path:.+]] [@Simple::@a_b, @Simple_A_B::@[[Simple_A_B_cc_sym:.+]]]
 //
-// CHECK:      firrtl.module private @Simple_A_B_C() {
+// CHECK:      firrtl.module private @Simple_A_B_C() attributes {dbg.artificial} {
 // CHECK-NEXT:   %0 = firrtl.xmr.deref @[[Simple_A_B_cc_path]]
 // CHECK-NEXT:   %ccc = firrtl.node %0
 // CHECK-NEXT: }
@@ -772,7 +772,7 @@ firrtl.circuit "Simple" {
 // CHECK:      hw.hierpath private @[[Simple_b_path:.+]] [@Simple::@[[Simple_b_sym:.+]]]
 // CHECK-NEXT: hw.hierpath private @[[Simple_A_c_path:.+]] [@Simple::@a, @Simple_A::@[[Simple_A_c_sym:.+]]]
 //
-// CHECK:      firrtl.module private @Simple_A_B() {
+// CHECK:      firrtl.module private @Simple_A_B() attributes {dbg.artificial} {
 // CHECK-NEXT:   %0 = firrtl.xmr.deref @[[Simple_A_c_path]]
 // CHECK-NEXT:   %1 = firrtl.xmr.deref @[[Simple_b_path]]
 // CHECK-NEXT:   %bb = firrtl.node %1
@@ -781,7 +781,7 @@ firrtl.circuit "Simple" {
 //
 // CHECK: hw.hierpath private @[[Simple_a_path:.+]] [@Simple::@[[Simple_a_sym:.+]]]
 //
-// CHECK:      firrtl.module private @Simple_A() {
+// CHECK:      firrtl.module private @Simple_A() attributes {dbg.artificial} {
 // CHECK-NEXT:   %0 = firrtl.xmr.deref @[[Simple_a_path]]
 // CHECK-NEXT:   %aa = firrtl.node %0
 // CHECK-NEXT:   %c = firrtl.wire sym @[[Simple_A_c_sym]]
@@ -985,7 +985,7 @@ firrtl.circuit "Verbatim" {
     }
   }
 }
-// CHECK:        firrtl.module private @[[VL:.+]]() {
+// CHECK:        firrtl.module private @[[VL:.+]]() attributes {dbg.artificial} {
 // CHECK-NEXT:     firrtl.constant 1
 // CHECK-NEXT:     firrtl.node sym @node
 // CHECK-NEXT:     sv.verbatim

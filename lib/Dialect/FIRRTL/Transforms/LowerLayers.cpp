@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/Emit/EmitOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
@@ -314,6 +315,10 @@ FModuleOp LowerLayersPass::buildNewModule(OpBuilder &builder,
     newModule->setAttr("output_file", dir);
   }
   SymbolTable::setSymbolVisibility(newModule, SymbolTable::Visibility::Private);
+
+  // Debug info: the module is not in the source.
+  newModule->setAttr(debug::kDbgArtificialAttr, builder.getUnitAttr());
+
   return newModule;
 }
 

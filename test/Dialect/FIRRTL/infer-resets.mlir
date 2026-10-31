@@ -848,3 +848,40 @@ firrtl.circuit "UnsafeDomainCast" {
     firrtl.matchingconnect %b, %1 : !firrtl.reset
   }
 }
+
+// -----
+
+// The reset kind of a `dbg.value` follows the inferred type. A plain `dbg.value`
+// without a reset kind stays as it is.
+// CHECK-LABEL: firrtl.circuit "DebugResetKind"
+firrtl.circuit "DebugResetKind" {
+  // CHECK-LABEL: firrtl.module @DebugResetKind
+  firrtl.module @DebugResetKind(
+    in %async: !firrtl.asyncreset,
+    in %sync: !firrtl.uint<1>,
+    out %io: !firrtl.bundle<r: reset>
+  ) {
+    // CHECK: dbg.value %a asyncreset : !firrtl.asyncreset
+    %a = firrtl.wire : !firrtl.reset
+    firrtl.connect %a, %async : !firrtl.reset, !firrtl.asyncreset
+    %0 = dbg.value %a reset : !firrtl.reset
+    dbg.variable "a", %0 : !dbg.value
+
+    // CHECK: dbg.value %s reset : !firrtl.uint<1>
+    %s = firrtl.wire : !firrtl.reset
+    firrtl.connect %s, %sync : !firrtl.reset, !firrtl.uint<1>
+    %1 = dbg.value %s reset : !firrtl.reset
+    dbg.variable "s", %1 : !dbg.value
+
+    // CHECK: [[R:%.+]] = firrtl.subfield %io[r]
+    // CHECK: dbg.value [[R]] asyncreset : !firrtl.asyncreset
+    %r = firrtl.subfield %io[r] : !firrtl.bundle<r: reset>
+    firrtl.connect %r, %async : !firrtl.reset, !firrtl.asyncreset
+    %2 = dbg.value %r reset : !firrtl.reset
+    dbg.variable "r", %2 : !dbg.value
+
+    // CHECK: dbg.value %a : !firrtl.asyncreset
+    %3 = dbg.value %a : !firrtl.reset
+    dbg.variable "plain", %3 : !dbg.value
+  }
+}

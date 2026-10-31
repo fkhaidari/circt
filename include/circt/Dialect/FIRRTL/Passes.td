@@ -796,9 +796,19 @@ def MaterializeDebugInfo :
   let summary = "Generate debug ops to track FIRRTL values";
   let description = [{
     This pass creates debug ops to track FIRRTL-level ports, nodes, wires,
-    registers, and instances throughout the pipeline. The `DebugInfo` analysis
-    can then be used at a later point in the pipeline to obtain a source
-    language view into the lowered IR.
+    registers, instances, and memories throughout the pipeline. The `DebugInfo`
+    analysis can then be used at a later point in the pipeline to obtain a
+    source language view into the lowered IR.
+
+    The debug ops record register and node kinds, port directions,
+    field flips and instance and memory scopes.
+    See the Debug dialect documentation for their meaning.
+
+    It consumes the `circt_debug_type` and `circt_debug_enum` intrinsics,
+    which give a declaration or a node inside its type a source type name,
+    language data or enum variants. On an instance the type name is the class
+    of the instance; without a target it is the class of the public module.
+    It must run before LowerIntrinsics, which erases these intrinsics.
   }];
   let dependentDialects = ["debug::DebugDialect"];
 }
