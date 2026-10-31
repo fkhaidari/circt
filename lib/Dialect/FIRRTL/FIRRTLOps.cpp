@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/CHIRRTLDialect.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAnnotations.h"
@@ -2615,6 +2616,7 @@ InstanceOp::cloneWithErasedPorts(const llvm::BitVector &erasures) {
 
   if (auto outputFile = (*this)->getAttr("output_file"))
     clone->setAttr("output_file", outputFile);
+  debug::copyInstanceAttr(*this, clone);
 
   return clone;
 }
@@ -2720,6 +2722,7 @@ FInstanceLike InstanceOp::cloneWithInsertedPorts(
 
   if (auto outputFile = (*this)->getAttr("output_file"))
     clone->setAttr("output_file", outputFile);
+  debug::copyInstanceAttr(*this, clone);
 
   return clone;
 }
@@ -3294,6 +3297,7 @@ FInstanceLike InstanceChoiceOp::cloneWithInsertedPorts(
 
   if (auto outputFile = (*this)->getAttr("output_file"))
     clone->setAttr("output_file", outputFile);
+  debug::copyInstanceAttr(*this, clone);
 
   return clone;
 }
@@ -3333,6 +3337,7 @@ InstanceChoiceOp::cloneWithErasedPorts(const llvm::BitVector &erasures) {
 
   if (auto outputFile = (*this)->getAttr("output_file"))
     clone->setAttr("output_file", outputFile);
+  debug::copyInstanceAttr(*this, clone);
 
   return clone;
 }

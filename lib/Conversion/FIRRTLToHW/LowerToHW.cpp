@@ -13,6 +13,7 @@
 #include "circt/Conversion/FIRRTLToHW.h"
 #include "circt/Conversion/SVLoweringUtils.h"
 #include "circt/Dialect/Comb/CombOps.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/Emit/EmitOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAnnotations.h"
@@ -4141,6 +4142,7 @@ LogicalResult FIRRTLLowering::visitDecl(InstanceOp oldInstance) {
   auto newInstance =
       hw::InstanceOp::create(builder, newModule, oldInstance.getNameAttr(),
                              operands, parameters, innerSym);
+  debug::copyInstanceAttr(oldInstance, newInstance);
 
   if (oldInstance.getLowerToBind() || oldInstance.getDoNotPrint())
     newInstance.setDoNotPrintAttr(builder.getUnitAttr());
@@ -4243,6 +4245,8 @@ LogicalResult FIRRTLLowering::visitDecl(InstanceChoiceOp oldInstanceChoice) {
     auto inst =
         hw::InstanceOp::create(builder, newMod, builder.getStringAttr(instName),
                                inputOperands, parameters, nullptr);
+    // One source-level instance, so every lowered copy carries its debug info.
+    debug::copyInstanceAttr(oldInstanceChoice, inst);
     (void)getOrAddInnerSym(
         hw::InnerSymTarget(inst.getOperation()),
         [&]() -> hw::InnerSymbolNamespace & { return moduleNamespace; });

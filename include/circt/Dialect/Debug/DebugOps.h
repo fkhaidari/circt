@@ -50,6 +50,15 @@ inline constexpr llvm::StringLiteral kDbgModuleInfoAttr =
 inline constexpr llvm::StringLiteral kDbgInstanceAttr =
     DebugDialect::InstanceAttrHelper::getNameStr();
 
+/// Whether `root` holds any debug dialect op.
+bool containsDebugOps(mlir::Operation *root);
+
+/// Copy the `dbg.instance` attribute of `from`, if any, onto `to`.
+inline void copyInstanceAttr(mlir::Operation *from, mlir::Operation *to) {
+  if (auto desc = from->getAttr(kDbgInstanceAttr))
+    to->setAttr(kDbgInstanceAttr, desc);
+}
+
 } // namespace circt::debug
 
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_H

@@ -151,6 +151,23 @@ firrtl.circuit "PreserveOutputFile" {
 
 // -----
 
+// The `dbg.instance` of an instance survives port removal: IMDeadCodeElim
+// rebuilds the instance.
+//
+// CHECK-LABEL: "PreserveDebugInstance"
+firrtl.circuit "PreserveDebugInstance" {
+  // expected-warning @+1{{module `Sub` is empty but cannot be removed because the module has ports "b" are referenced by name or dontTouched}}
+  firrtl.module private @Sub(in %a: !firrtl.uint<1>, in %b: !firrtl.uint<1> sym @sym) {}
+  // CHECK: firrtl.module @PreserveDebugInstance
+  firrtl.module @PreserveDebugInstance() {
+    // CHECK-NEXT: firrtl.instance sub
+    // CHECK-SAME: dbg.instance = [#dbg.instance<name = "sub">]
+    firrtl.instance sub {dbg.instance = [#dbg.instance<name = "sub">]} @Sub(in a: !firrtl.uint<1>, in b: !firrtl.uint<1>)
+  }
+}
+
+// -----
+
 // CHECK-LABEL: "DeleteEmptyModule"
 firrtl.circuit "DeleteEmptyModule" {
   // CHECK: firrtl.module private @empty

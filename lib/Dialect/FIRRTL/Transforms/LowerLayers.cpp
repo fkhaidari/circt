@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/Emit/EmitOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
@@ -275,6 +276,9 @@ class LowerLayersPass
   /// Indicates exclusive access to modify the circuitNamespace and the circuit.
   llvm::sys::SmartMutex<true> *circuitMutex;
 
+  /// Whether the circuit carries debug info.
+  bool hasDebugInfo = false;
+
   /// A map of layer blocks to "safe" global names which are fine to create in
   /// the circuit namespace.
   DenseMap<LayerBlockOp, LayerBlockGlobals> layerBlockGlobals;
@@ -314,6 +318,11 @@ FModuleOp LowerLayersPass::buildNewModule(OpBuilder &builder,
     newModule->setAttr("output_file", dir);
   }
   SymbolTable::setSymbolVisibility(newModule, SymbolTable::Visibility::Private);
+
+  // Debug info: the module is not in the source.
+  if (hasDebugInfo)
+    newModule->setAttr(debug::kDbgArtificialAttr, builder.getUnitAttr());
+
   return newModule;
 }
 
@@ -1392,6 +1401,7 @@ void LowerLayersPass::runOnOperation() {
   // Initialize members which cannot be initialized automatically.
   llvm::sys::SmartMutex<true> mutex;
   circuitMutex = &mutex;
+  hasDebugInfo = debug::containsDebugOps(circuitOp);
 
   auto *ig = &getAnalysis<InstanceGraph>();
   CircuitNamespace ns(circuitOp);
