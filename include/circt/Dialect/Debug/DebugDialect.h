@@ -9,7 +9,9 @@
 #ifndef CIRCT_DIALECT_DEBUG_DEBUGDIALECT_H
 #define CIRCT_DIALECT_DEBUG_DEBUGDIALECT_H
 
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/Operation.h"
 
 // Dialect definition generated from `DebugDialect.td`
 #include "circt/Dialect/Debug/DebugDialect.h.inc"
