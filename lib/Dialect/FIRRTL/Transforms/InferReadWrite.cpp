@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAnnotations.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLTypes.h"
@@ -161,6 +162,7 @@ struct InferReadWritePass
           memOp.getNameKind(), memOp.getAnnotations(),
           builder.getArrayAttr(portAnnotations), memOp.getInnerSymAttr(),
           memOp.getInitAttr(), memOp.getPrefixAttr());
+      debug::copyInstanceAttr(memOp, rwMem);
       ++numRWPortMemoriesInferred;
       auto rwPort = rwMem->getResult(nDbgs);
       // Create the subfield access to all fields of the port.
@@ -560,6 +562,7 @@ private:
           memOp.getNameKindAttr(), memOp.getAnnotationsAttr(),
           memOp.getPortAnnotationsAttr(), memOp.getInnerSymAttr(),
           memOp.getInitAttr(), memOp.getPrefixAttr());
+      debug::copyInstanceAttr(memOp, newMem);
       // Now replace the result of old memory with the new one.
       for (const auto &portIt : llvm::enumerate(memOp.getResults())) {
         // Old result.

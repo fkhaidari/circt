@@ -224,6 +224,9 @@ struct CircuitLoweringState {
   std::atomic<bool> usedStopCond{false};
   std::atomic<bool> usedFileDescriptorLib{false};
 
+  /// Whether the circuit carries debug info. Without it, lowering adds none.
+  bool hasDebugInfo = false;
+
   CircuitLoweringState(CircuitOp circuitOp, bool enableAnnotationWarning,
                        bool lowerToCore,
                        firrtl::VerificationFlavor verificationFlavor,
@@ -234,6 +237,8 @@ struct CircuitLoweringState {
         lowerToCore(lowerToCore), verificationFlavor(verificationFlavor),
         nlaTable(nlaTable), macroTable(macroTable) {
     auto *context = circuitOp.getContext();
+
+    hasDebugInfo = debug::containsDebugOps(circuitOp);
 
     // Get the testbench output directory.
     if (auto tbAnno =
@@ -1344,6 +1349,11 @@ FIRRTLModuleLowering::lowerMemModule(FMemModuleOp oldModule,
   auto newModule = hw::HWModuleExternOp::create(
       builder, oldModule.getLoc(), oldModule.getModuleNameAttr(), ports,
       oldModule.getModuleNameAttr());
+
+  // Debug info: the module is not in the source.
+  if (loweringState.hasDebugInfo)
+    newModule->setAttr(debug::kDbgLoweredAttr, builder.getUnitAttr());
+
   loweringState.processRemainingAnnotations(oldModule,
                                             AnnotationSet(oldModule));
   return newModule;
@@ -3928,6 +3938,12 @@ LogicalResult FIRRTLLowering::visitDecl(MemOp op) {
       builder, memType, memSummary.readLatency, memSummary.writeLatency,
       memSummary.readUnderWrite, memSummary.writeUnderWrite, op.getNameAttr(),
       op.getInnerSymAttr(), memInit, op.getPrefixAttr(), Attribute{});
+
+  // Debug info: the module made of the memory is not in the source, unless
+  // the memory has a description, which moves along.
+  if (circuitState.hasDebugInfo)
+    memDecl->setAttr(debug::kDbgLoweredAttr, builder.getUnitAttr());
+  debug::copyInstanceAttr(op, memDecl);
 
   if (auto parent = op->getParentOfType<hw::HWModuleOp>()) {
     if (auto file = parent->getAttrOfType<hw::OutputFileAttr>("output_file")) {

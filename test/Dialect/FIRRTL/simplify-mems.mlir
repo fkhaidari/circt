@@ -64,11 +64,13 @@ firrtl.circuit "ReadWriteToWrite" {
     %c1_ui1 = firrtl.constant 1 : !firrtl.uint<1>
 
     // CHECK: %Memory_rw, %Memory_r = firrtl.mem  Undefined
+    // CHECK-SAME: dbg.instance = [#dbg.instance<name = "Memory">]
     // CHECK-SAME: !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data: uint<42>, mask: uint<1>>
     // CHECK-SAME: !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: uint<42>>
 
     %Memory_rw, %Memory_r = firrtl.mem Undefined
       {
+        dbg.instance = [#dbg.instance<name = "Memory">],
         depth = 12 : i64,
         name = "Memory",
         portNames = ["rw", "r"],
@@ -131,10 +133,12 @@ firrtl.circuit "UnusedPorts" {
     %c1_ui1 = firrtl.constant 1 : !firrtl.uint<1>
 
     // CHECK: %Memory_pinned = firrtl.mem  Undefined
+    // CHECK-SAME: dbg.instance = [#dbg.instance<name = "Memory">]
     // CHECK-SAME: !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, rdata flip: uint<42>, wmode: uint<1>, wdata: uint<42>, wmask: uint<1>>
 
     %Memory_read, %Memory_rw, %Memory_write, %Memory_pinned = firrtl.mem Undefined
       {
+        dbg.instance = [#dbg.instance<name = "Memory">],
         depth = 12 : i64,
         name = "Memory",
         portNames = ["read", "rw", "write", "pinned"],

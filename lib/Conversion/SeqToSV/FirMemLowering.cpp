@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "FirMemLowering.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/HW/HWAttributes.h"
 #include "circt/Support/Path.h"
 #include "mlir/IR/Threading.h"
@@ -322,6 +323,18 @@ FirMemLowering::createMemoryModule(FirMemConfig &mem,
   // Put the memory in the lowest common ancestor directory.
   if (auto outputFile = computeCommonOutputFile(memOps))
     genOp->setAttr("output_file", outputFile);
+
+  // Debug info: the module is not in the source,
+  // unless debug info describes the memory as an instance of it.
+  // The description moves to the instance with the other attributes.
+  bool described = llvm::any_of(memOps, [](seq::FirMemOp memOp) {
+    return memOp->hasAttr(debug::kDbgInstanceAttr);
+  });
+
+  if (described)
+    genOp->setAttr(debug::kDbgMemoryAttr, UnitAttr::get(context));
+  else if (auto lowered = memOps.front()->getAttr(debug::kDbgLoweredAttr))
+    genOp->setAttr(debug::kDbgLoweredAttr, lowered);
 
   return genOp;
 }

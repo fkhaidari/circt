@@ -303,6 +303,17 @@ firrtl.module @LargeMem(in %clock: !firrtl.clock, in %addr: !firrtl.uint<35>, ou
   firrtl.connect %out, %r_data : !firrtl.uint<1>, !firrtl.uint<1>
 }
 
+// The memory keeps the `dbg.instance` of the CHIRRTL memory.
+// CHECK-LABEL: firrtl.module @KeepDebugInstance
+firrtl.module @KeepDebugInstance(in %clock: !firrtl.clock, in %addr: !firrtl.uint<3>, out %out: !firrtl.uint<8>) {
+  // CHECK: firrtl.mem
+  // CHECK-SAME: dbg.instance = [#dbg.instance<name = "mem">]
+  %mem = chirrtl.seqmem Undefined {dbg.instance = [#dbg.instance<name = "mem">]} : !chirrtl.cmemory<uint<8>, 8>
+  %read_data, %read_port = chirrtl.memoryport Read %mem {name = "read"} : (!chirrtl.cmemory<uint<8>, 8>) -> (!firrtl.uint<8>, !chirrtl.cmemoryport)
+  chirrtl.memoryport.access %read_port[%addr], %clock : !chirrtl.cmemoryport, !firrtl.uint<3>, !firrtl.clock
+  firrtl.connect %out, %read_data : !firrtl.uint<8>, !firrtl.uint<8>
+}
+
 firrtl.module @DbgsMemPort(in %clock: !firrtl.clock, in %addr : !firrtl.uint<1>, out %_a: !firrtl.probe<vector<uint<1>, 2>>, in %cond : !firrtl.uint<1>) {
   %ram = chirrtl.combmem : !chirrtl.cmemory<uint<1>, 2>
   // This port should be deleted.

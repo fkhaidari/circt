@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/CHIRRTLVisitors.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLTypes.h"
@@ -364,6 +365,8 @@ void LowerCHIRRTLPass::replaceMem(Operation *cmem, StringRef name,
       symOp.getInnerSymAttr(),
       cmem->getAttrOfType<firrtl::MemoryInitAttr>("init"),
       cmem->getAttrOfType<StringAttr>("prefix"));
+  // Keep attributes such as the debug description of the memory.
+  debug::copyInstanceAttr(cmem, memory);
   ++numCreatedMems;
 
   // Process each memory port, initializing the memory port and inferring when

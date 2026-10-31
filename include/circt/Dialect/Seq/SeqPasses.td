@@ -69,6 +69,7 @@ def HWMemSimImpl : Pass<"hw-memory-sim", "ModuleOp"> {
   }];
 
   let dependentDialects = [
+    "circt::debug::DebugDialect",
     "circt::emit::EmitDialect",
     "circt::hw::HWDialect",
     "circt::sv::SVDialect",

@@ -3,7 +3,7 @@
 
 firrtl.circuit "Mem" {
   firrtl.module public  @Mem(in %clock: !firrtl.clock, in %rAddr: !firrtl.uint<4>, in %rEn: !firrtl.uint<1>, out %rData: !firrtl.bundle<a: uint<8>, b: enum<A = 128>>, in %wAddr: !firrtl.uint<4>, in %wEn: !firrtl.uint<1>, in %wMask: !firrtl.bundle<a: uint<1>, b: uint<1>>, in %wData: !firrtl.bundle<a: uint<8>, b: enum<A = 128>>) {
-    %memory_r, %memory_w = firrtl.mem Undefined {depth = 16 : i64, name = "memory", portNames = ["r", "w"], prefix = "foo_", readLatency = 0 : i32, writeLatency = 1 : i32} : !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: bundle<a: uint<8>, b: enum<A = 128>>>, !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data: bundle<a: uint<8>, b: enum<A = 128>>, mask: bundle<a: uint<1>, b: uint<1>>>
+    %memory_r, %memory_w = firrtl.mem Undefined {dbg.instance = [#dbg.instance<name = "m">], depth = 16 : i64, name = "memory", portNames = ["r", "w"], prefix = "foo_", readLatency = 0 : i32, writeLatency = 1 : i32} : !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: bundle<a: uint<8>, b: enum<A = 128>>>, !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data: bundle<a: uint<8>, b: enum<A = 128>>, mask: bundle<a: uint<1>, b: uint<1>>>
     %0 = firrtl.subfield %memory_r[clk] : !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: bundle<a: uint<8>, b: enum<A = 128>>>
     firrtl.matchingconnect %0, %clock : !firrtl.clock
     %1 = firrtl.subfield %memory_r[en] : !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: bundle<a: uint<8>, b: enum<A = 128>>>
@@ -24,7 +24,7 @@ firrtl.circuit "Mem" {
     firrtl.matchingconnect %8, %wData : !firrtl.bundle<a: uint<8>, b: enum<A = 128>>
     // ---------------------------------------------------------------------------------
     // After flattenning the memory data
-    // CHECK: %[[memory_r:.+]], %[[memory_w:.+]] = firrtl.mem Undefined  {depth = 16 : i64, name = "memory", portNames = ["r", "w"], prefix = "foo_", readLatency = 0 : i32, writeLatency = 1 : i32}
+    // CHECK: %[[memory_r:.+]], %[[memory_w:.+]] = firrtl.mem Undefined  {dbg.instance = [#dbg.instance<name = "m">], depth = 16 : i64, name = "memory", portNames = ["r", "w"], prefix = "foo_", readLatency = 0 : i32, writeLatency = 1 : i32}
     // CHECK-SAME: !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: uint<16>>, !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data: uint<16>, mask: uint<2>>
     // CHECK: %[[memory_r_0:.+]] = firrtl.wire {name = "memory_r"} : !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: bundle<a: uint<8>, b: enum<A = 128>>>
     // CHECK: %[[v0:.+]] = firrtl.subfield %[[memory_r]][addr]

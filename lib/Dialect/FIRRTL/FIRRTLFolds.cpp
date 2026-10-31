@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAttributes.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLTypes.h"
@@ -3138,6 +3139,8 @@ struct FoldUnusedPorts : public mlir::OpRewritePattern<MemOp> {
           rewriter.getStrArrayAttr(portNames), mem.getName(), mem.getNameKind(),
           mem.getAnnotations(), rewriter.getArrayAttr(portAnnotations),
           mem.getInnerSymAttr(), mem.getInitAttr(), mem.getPrefixAttr());
+    if (newOp)
+      debug::copyInstanceAttr(mem, newOp);
 
     // Replace the dead ports with dummy wires.
     unsigned nextPort = 0;
@@ -3197,6 +3200,7 @@ struct FoldReadWritePorts : public mlir::OpRewritePattern<MemOp> {
         rewriter.getStrArrayAttr(portNames), mem.getName(), mem.getNameKind(),
         mem.getAnnotations(), rewriter.getArrayAttr(portAnnotations),
         mem.getInnerSymAttr(), mem.getInitAttr(), mem.getPrefixAttr());
+    debug::copyInstanceAttr(mem, newOp);
 
     for (unsigned i = 0, n = mem.getNumResults(); i < n; ++i) {
       auto result = mem.getResult(i);

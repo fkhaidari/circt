@@ -45,3 +45,25 @@ firrtl.circuit "Choice" {
     firrtl.matchingconnect %inst_in, %in : !firrtl.uint<8>
   }
 }
+
+// -----
+
+// A memory keeps its description on the `seq.firmem` it lowers to.
+
+// CHECK-LABEL: hw.module @Memory
+// CHECK: seq.firmem
+// CHECK-SAME: dbg.instance = [#dbg.instance<name = "mem">]
+firrtl.circuit "Memory" {
+  firrtl.module @Memory(in %clk: !firrtl.clock, in %addr: !firrtl.uint<2>,
+                        in %en: !firrtl.uint<1>, out %data: !firrtl.uint<8>) {
+    %mem_r = firrtl.mem Undefined {dbg.instance = [#dbg.instance<name = "mem">], depth = 4 : i64, name = "mem", portNames = ["r"], readLatency = 0 : i32, writeLatency = 1 : i32} : !firrtl.bundle<addr: uint<2>, en: uint<1>, clk: clock, data flip: uint<8>>
+    %0 = firrtl.subfield %mem_r[addr] : !firrtl.bundle<addr: uint<2>, en: uint<1>, clk: clock, data flip: uint<8>>
+    firrtl.matchingconnect %0, %addr : !firrtl.uint<2>
+    %1 = firrtl.subfield %mem_r[en] : !firrtl.bundle<addr: uint<2>, en: uint<1>, clk: clock, data flip: uint<8>>
+    firrtl.matchingconnect %1, %en : !firrtl.uint<1>
+    %2 = firrtl.subfield %mem_r[clk] : !firrtl.bundle<addr: uint<2>, en: uint<1>, clk: clock, data flip: uint<8>>
+    firrtl.matchingconnect %2, %clk : !firrtl.clock
+    %3 = firrtl.subfield %mem_r[data] : !firrtl.bundle<addr: uint<2>, en: uint<1>, clk: clock, data flip: uint<8>>
+    firrtl.matchingconnect %data, %3 : !firrtl.uint<8>
+  }
+}
