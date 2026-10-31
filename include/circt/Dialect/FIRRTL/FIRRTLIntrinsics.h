@@ -184,6 +184,27 @@ struct GenericIntrinsic {
   }
 };
 
+/// Collect the `ext_<lang>` parameters of a debug intrinsic into a dictionary
+/// from language to JSON string. Any other parameter must be in `known`, where
+/// an entry ending in `_` matches every parameter with that prefix.
+LogicalResult getDebugExt(GenericIntrinsic gi, ArrayRef<StringRef> known,
+                          DictionaryAttr &ext);
+
+/// The parameters of a `circt_debug_type` or `circt_debug_enum` intrinsic.
+struct DebugMetaParams {
+  /// The declaration the record is for. Null for the enclosing module.
+  StringAttr target;
+  StringRef path;
+  StringAttr name;
+  DictionaryAttr ext;
+  /// The variants of `circt_debug_enum`, as `dbg.enum` takes them.
+  DictionaryAttr enumVariants;
+};
+
+/// Check the parameters of a debug metadata intrinsic and collect them.
+/// Checks only what the intrinsic says by itself, not its target.
+FailureOr<DebugMetaParams> parseDebugMeta(GenericIntrinsic gi);
+
 /// Base class for Intrinsic Converters.
 ///
 /// Intrinsic converters contain validation logic, along with a converter

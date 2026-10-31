@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Dialect/FIRRTL/FIRRTLIntrinsics.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAnnotationHelper.h"
 #include "circt/Dialect/FIRRTL/FIRRTLTypes.h"
@@ -214,6 +215,123 @@ void IntrinsicLoweringInterfaceCollection::populateIntrinsicLowerings(
 //===----------------------------------------------------------------------===//
 // FIRRTL intrinsic lowering converters
 //===----------------------------------------------------------------------===//
+
+LogicalResult firrtl::getDebugExt(GenericIntrinsic gi,
+                                  ArrayRef<StringRef> known,
+                                  DictionaryAttr &ext) {
+  NamedAttrList langs;
+  for (auto param : gi.op.getParameters().getAsRange<ParamDeclAttr>()) {
+    auto name = param.getName().getValue();
+    auto matches = [&](StringRef k) {
+      return k.ends_with("_") ? name.starts_with(k) : name == k;
+    };
+    if (llvm::any_of(known, matches))
+      continue;
+
+    auto lang = name;
+    if (!lang.consume_front("ext_"))
+      return gi.emitError() << " has unknown parameter '" << name << "'";
+
+    if (!debug::isExtLanguage(lang))
+      return gi.emitError()
+             << " parameter '" << name << "' must name a lowercase language";
+
+    auto json = dyn_cast<StringAttr>(param.getValue());
+    if (!json)
+      return gi.emitError() << " parameter '" << name << "' must be a string";
+
+    if (auto parsed = llvm::json::parse(json.getValue()); !parsed)
+      return gi.emitError()
+             << " parameter '" << name
+             << "' is not JSON: " << llvm::toString(parsed.takeError());
+
+    langs.append(lang, json);
+  }
+
+  ext = langs.empty() ? DictionaryAttr{}
+                      : langs.getDictionary(gi.op.getContext());
+
+  return success();
+}
+
+/// The variants of a `circt_debug_enum` intrinsic, as `dbg.enum` takes them.
+static FailureOr<DictionaryAttr> getEnumVariants(GenericIntrinsic gi) {
+  // The parser makes an integer parameter si32 or ui32 at least,
+  // but a variant of `dbg.enum` is signless.
+  auto i64 = IntegerType::get(gi.op.getContext(), 64);
+  NamedAttrList variants;
+  for (auto param : gi.op.getParameters().getAsRange<ParamDeclAttr>()) {
+    auto name = param.getName().getValue();
+    auto variant = name;
+    if (!variant.consume_front("variant_"))
+      continue;
+
+    auto value = dyn_cast<IntegerAttr>(param.getValue());
+    if (variant.empty() || !value)
+      return gi.emitError() << " parameter '" << name
+                            << "' must name a variant and be an integer";
+
+    auto tag = value.getValue();
+    if (value.getType().isSignedInteger() && tag.isNegative())
+      return gi.emitError()
+             << " parameter '" << name << "' must not be negative";
+
+    if (tag.getActiveBits() > 64)
+      return gi.emitError()
+             << " parameter '" << name << "' does not fit in 64 bits";
+
+    variants.append(variant, IntegerAttr::get(i64, tag.zextOrTrunc(64)));
+  }
+
+  if (variants.empty())
+    return gi.emitError() << " has no variants";
+
+  return variants.getDictionary(gi.op.getContext());
+}
+
+FailureOr<DebugMetaParams> firrtl::parseDebugMeta(GenericIntrinsic gi) {
+  bool isEnum = gi.op.getIntrinsic().ends_with("enum");
+  if (gi.hasNInputs(0) || gi.hasNoOutput() ||
+      gi.namedParam("target", !isEnum) || gi.namedParam("path", true) ||
+      gi.namedParam("name", !isEnum))
+    return failure();
+
+  SmallVector<StringRef> known{"target", "path", "name"};
+  if (isEnum)
+    known.push_back("variant_");
+
+  DebugMetaParams params;
+  if (failed(getDebugExt(gi, known, params.ext)))
+    return failure();
+
+  params.target = gi.getParamValue<StringAttr>("target");
+  params.name = gi.getParamValue<StringAttr>("name");
+  if (auto path = gi.getParamValue<StringAttr>("path"))
+    params.path = path.getValue();
+
+  if (isEnum) {
+    auto variants = getEnumVariants(gi);
+    if (failed(variants))
+      return failure();
+    params.enumVariants = *variants;
+  } else if (!params.name && !params.ext) {
+    return gi.emitError() << " needs a 'name' or an 'ext_<lang>' parameter";
+  }
+
+  // Without a target the record is for the enclosing module.
+  // Only a public module carries it:
+  // the class of a private module belongs to its instance.
+  if (!params.target) {
+    if (!params.path.empty())
+      return gi.emitError() << " without a 'target' cannot have a 'path'";
+
+    auto moduleOp = gi.op->getParentOfType<FModuleOp>();
+    if (!moduleOp || moduleOp.isPrivate())
+      return gi.emitError() << " needs a 'target' outside of a public module";
+  }
+
+  return params;
+}
 
 namespace {
 
@@ -792,6 +910,23 @@ public:
     rewriter.replaceOpWithNewOp<DPICallIntrinsicOp>(
         gi.op, gi.op.getResultTypes(), functionName, inputNamesStrArray,
         outputStr, clock, enable, inputs);
+  }
+};
+
+/// Without debug info, the debug metadata of a declaration is checked
+/// and dropped. MaterializeDebugInfo consumes it otherwise.
+/// Only what the intrinsic says by itself is checked here:
+/// checking the target needs the module, which MaterializeDebugInfo scans.
+class CirctDebugMetaConverter : public IntrinsicConverter {
+public:
+  LogicalResult checkAndConvert(GenericIntrinsic gi,
+                                GenericIntrinsicOpAdaptor adaptor,
+                                PatternRewriter &rewriter) override {
+    if (failed(parseDebugMeta(gi)))
+      return failure();
+
+    rewriter.eraseOp(gi.op);
+    return success();
   }
 };
 

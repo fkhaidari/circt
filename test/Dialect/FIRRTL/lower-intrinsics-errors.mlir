@@ -145,3 +145,77 @@ firrtl.circuit "ViewWrongOperandCount" {
     firrtl.int.generic "circt_view" <name: none = "view", info: none = "{\"class\":\"sifive.enterprise.grandcentral.AugmentedBundleType\", \"defName\": \"MyView\", \"elements\": [{\"name\": \"foo\", \"tpe\":{\"class\":\"sifive.enterprise.grandcentral.AugmentedGroundType\"}}]}"> : () -> ()
   }
 }
+
+// -----
+
+// Without a target the record is for the module, which must be public.
+firrtl.circuit "DebugTypeNoTargetPrivate" {
+  firrtl.module private @Child() {
+    // expected-error @below {{circt_debug_type needs a 'target' outside of a public module}}
+    // expected-error @below {{failed to legalize}}
+    firrtl.int.generic "circt_debug_type" <name: none = "T"> : () -> ()
+  }
+  firrtl.module @DebugTypeNoTargetPrivate() {
+    firrtl.instance c @Child()
+  }
+}
+
+// -----
+
+firrtl.circuit "DebugTypeNoTargetPath" {
+  firrtl.module @DebugTypeNoTargetPath() {
+    // expected-error @below {{circt_debug_type without a 'target' cannot have a 'path'}}
+    // expected-error @below {{failed to legalize}}
+    firrtl.int.generic "circt_debug_type" <path: none = ".a", name: none = "T"> : () -> ()
+  }
+}
+
+// -----
+
+firrtl.circuit "DebugEnumNoTarget" {
+  firrtl.module @DebugEnumNoTarget() {
+    // expected-error @below {{circt_debug_enum is missing parameter target}}
+    // expected-error @below {{failed to legalize}}
+    firrtl.int.generic "circt_debug_enum" <name: none = "E", variant_A: ui32 = 0> : () -> ()
+  }
+}
+
+// -----
+
+firrtl.circuit "DebugTypeUnknownParam" {
+  firrtl.module @DebugTypeUnknownParam() {
+    // expected-error @below {{circt_debug_type has unknown parameter 'variant_A'}}
+    // expected-error @below {{failed to legalize}}
+    firrtl.int.generic "circt_debug_type" <target: none = "x", name: none = "T", variant_A: ui32 = 0> : () -> ()
+  }
+}
+
+// -----
+
+firrtl.circuit "DebugTypeNoName" {
+  firrtl.module @DebugTypeNoName() {
+    // expected-error @below {{circt_debug_type needs a 'name' or an 'ext_<lang>' parameter}}
+    // expected-error @below {{failed to legalize}}
+    firrtl.int.generic "circt_debug_type" <target: none = "x"> : () -> ()
+  }
+}
+
+// -----
+
+firrtl.circuit "DebugEnumNoVariants" {
+  firrtl.module @DebugEnumNoVariants() {
+    // expected-error @below {{circt_debug_enum has no variants}}
+    // expected-error @below {{failed to legalize}}
+    firrtl.int.generic "circt_debug_enum" <target: none = "x", name: none = "E"> : () -> ()
+  }
+}
+
+// -----
+
+firrtl.circuit "DebugEnumBadVariant" {
+  firrtl.module @DebugEnumBadVariant() {
+    // expected-error @below {{circt_debug_enum parameter 'variant_A' must name a variant and be an integer}}
+    // expected-error @below {{failed to legalize}}
+    firrtl.int.generic "circt_debug_enum" <target: none = "x", name: none = "E", variant_A: none = "a"> : () -> ()
+  }
+}

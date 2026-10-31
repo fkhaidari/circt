@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Dialect/FIRRTL/FIRRTLAnnotations.h"
+#include "circt/Dialect/FIRRTL/FIRRTLIntrinsics.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLTypes.h"
 #include "circt/Dialect/FIRRTL/FIRRTLVisitors.h"
@@ -157,6 +158,80 @@ LogicalResult walkMappings(
 // Visitor
 //===----------------------------------------------------------------------===//
 
+/// Whether a type has a hardware part that survives this pass.
+static bool hasHW(Type type) {
+  if (auto bundle = dyn_cast<OpenBundleType>(type))
+    return llvm::any_of(bundle.getElements(),
+                        [](auto element) { return hasHW(element.type); });
+
+  if (auto vector = dyn_cast<OpenVectorType>(type))
+    return hasHW(vector.getElementType());
+
+  return isa<FIRRTLBaseType>(type);
+}
+
+/// Whether the node at `path` in `type` has no HW part left after the pass.
+/// A path that names no field of `type` is not erased;
+/// the later pass reports it.
+static bool pathIsErased(Type type, StringRef path) {
+  while (hasHW(type)) {
+    if (path.empty())
+      return false;
+
+    if (path.consume_front("[*]")) {
+      auto vector = dyn_cast<OpenVectorType>(type);
+      if (!vector)
+        return false;
+
+      type = vector.getElementType();
+      continue;
+    }
+
+    if (!path.consume_front("."))
+      return false;
+
+    auto bundle = dyn_cast<OpenBundleType>(type);
+    auto field = path.take_until([](char c) { return c == '.' || c == '['; });
+
+    auto index = bundle ? bundle.getElementIndex(field) : std::nullopt;
+    if (!index)
+      return false;
+
+    type = bundle.getElementType(*index);
+    path = path.drop_front(field.size());
+  }
+
+  return true;
+}
+
+/// Drop debug metadata on parts of `splitDecls` that were erased:
+/// there is nothing left to describe.
+static void dropErasedDebugMetas(ArrayRef<GenericIntrinsicOp> debugMetas,
+                                 const DenseMap<StringAttr, Type> &splitDecls) {
+  if (splitDecls.empty())
+    return;
+
+  for (auto op : debugMetas) {
+    // The intrinsic is not checked yet, so read its parameters with care.
+    GenericIntrinsic gi(op);
+    auto target = gi.getParamByName("target");
+    if (!target)
+      continue;
+
+    auto decl = splitDecls.find(dyn_cast<StringAttr>(target.getValue()));
+    if (decl == splitDecls.end())
+      continue;
+
+    StringRef path;
+    if (auto pathParam = gi.getParamByName("path"))
+      if (auto pathAttr = dyn_cast<StringAttr>(pathParam.getValue()))
+        path = pathAttr.getValue();
+
+    if (pathIsErased(decl->second, path))
+      op.erase();
+  }
+}
+
 namespace {
 class Visitor : public FIRRTLVisitor<Visitor, LogicalResult> {
 public:
@@ -168,12 +243,22 @@ public:
   using FIRRTLVisitor<Visitor, LogicalResult>::visitDecl;
   using FIRRTLVisitor<Visitor, LogicalResult>::visitExpr;
   using FIRRTLVisitor<Visitor, LogicalResult>::visitStmt;
+  using FIRRTLVisitor<Visitor, LogicalResult>::visitStmtExpr;
 
   LogicalResult visitDecl(InstanceOp op);
   LogicalResult visitDecl(WireOp op);
 
   LogicalResult visitExpr(OpenSubfieldOp op);
   LogicalResult visitExpr(OpenSubindexOp op);
+
+  LogicalResult visitStmtExpr(GenericIntrinsicOp op) {
+    if (llvm::is_contained({"circt_debug_type", "circt.debug_type",
+                            "circt_debug_enum", "circt.debug_enum"},
+                           op.getIntrinsic()))
+      debugMetas.push_back(op);
+
+    return visitUnhandledOp(op);
+  }
 
   LogicalResult visitUnhandledOp(Operation *op) {
     auto notOpenAggType = [](auto type) {
@@ -216,6 +301,12 @@ private:
 
   /// List of operations to erase at the end.
   SmallVector<Operation *> opsToErase;
+
+  /// Original types of the ports and wires that were split.
+  DenseMap<StringAttr, Type> splitDecls;
+
+  /// Debug metadata intrinsics, checked against `splitDecls` after the walk.
+  SmallVector<GenericIntrinsicOp> debugMetas;
 
   /// FieldRef cache.  Be careful to only use this for operations
   /// in the original IR / not mutated.
@@ -299,6 +390,8 @@ LogicalResult Visitor::visit(FModuleLike mod) {
                    << "annotations found on aggregate with no HW";
         }
 
+        splitDecls[port.name] = port.type;
+
         // Create ports for each non-hw field.
         for (const auto &[findex, field] : llvm::enumerate(pmi.fields)) {
           auto name = StringAttr::get(context,
@@ -378,6 +471,8 @@ LogicalResult Visitor::visit(FModuleLike mod) {
     // Cleanup dead operations.
     for (auto &op : llvm::reverse(opsToErase))
       op->erase();
+
+    dropErasedDebugMetas(debugMetas, splitDecls);
   }
 
   // Drop dead ports.
@@ -664,6 +759,8 @@ LogicalResult Visitor::visitDecl(WireOp op) {
   if (!op.getAnnotations().empty())
     return mlir::emitError(op.getLoc())
            << "annotations on open aggregates not handled yet";
+
+  splitDecls[op.getNameAttr()] = op.getType(0);
 
   // Create the new HW wire.
   if (mappings.hwType)
