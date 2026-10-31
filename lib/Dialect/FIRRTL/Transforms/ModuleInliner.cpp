@@ -1344,6 +1344,8 @@ private:
     SmallVector<Value> wires;                ///< Wires created for ports.
     FModuleOp childModule;                   ///< The module being inlined.
     Value debugScope;                        ///< Debug scope of the instance.
+    /// Source names of the inlined instances down to this one.
+    SmallVector<Attribute> debugPath;
     /// VNLAs active at this level, id-sorted (I6; see setActiveNLAsForChild).
     SmallVector<VirtualNLA *> activeNLAs;
 
@@ -1450,10 +1452,12 @@ private:
   /// marked for inlining.
   LogicalResult processInstances(FModuleOp module, bool flatten);
 
-  /// Create a debug scope for an inlined instance at the current insertion
-  /// point of the `il.mic` builder.
+  /// Create the debug scopes of an inlined instance at the current insertion
+  /// point of the `il.mic` builder, one for each of its `#dbg.instance`
+  /// descriptions, or one if it has none. `parentIL` is the level the
+  /// instance is in, if it is in a module being inlined.
   void createDebugScope(InliningLevel &il, InstanceOp instance,
-                        Value parentScope = {});
+                        InliningLevel *parentIL = nullptr);
 
   /// P3: inline/flatten the live modules in parents-before-children order
   /// (I12), then drop debug scopes that ended up unused.
@@ -1603,14 +1607,40 @@ LogicalResult Inliner::run() {
 bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
   // Debug operations with implicit module scope now need an explicit scope,
   // since inlining has destroyed the module whose scope they implicitly used.
+  // Dedup may have merged several modules into the child.
+  // A root op that carries no `dbg.merged_from` belongs to the child itself.
   auto updateDebugScope = [&](auto op) {
-    if (!op.getScope())
-      op.getScopeMutable().assign(il.debugScope);
+    if (op.getScope())
+      return;
+
+    op.getScopeMutable().assign(il.debugScope);
+    if (il.childModule->hasAttr(debug::kDbgModuleLocsAttr) &&
+        !op->hasAttr(debug::kDbgMergedFromAttr))
+      op->setAttr(debug::kDbgMergedFromAttr,
+                  il.childModule.getModuleNameAttr());
   };
   if (auto varOp = dyn_cast<debug::VariableOp>(op))
     return updateDebugScope(varOp), false;
   if (auto scopeOp = dyn_cast<debug::ScopeOp>(op))
     return updateDebugScope(scopeOp), false;
+
+  // An instance or memory moved out of the child now sits in its inlined
+  // scope. Its descriptions name the way there, and the module it was in.
+  if (auto entries = op->getAttrOfType<ArrayAttr>(debug::kDbgInstanceAttr)) {
+    SmallVector<Attribute> newEntries;
+    for (auto entry : entries.getAsRange<debug::InstanceAttr>()) {
+      SmallVector<Attribute> path(il.debugPath);
+      auto origin = entry.getOrigin();
+      if (auto oldPath = entry.getPath())
+        llvm::append_range(path, oldPath);
+      else if (!origin)
+        origin = il.childModule.getModuleNameAttr();
+      newEntries.push_back(debug::InstanceAttr::get(
+          context, entry.getName(), entry.getModule(), entry.getTypeName(),
+          entry.getExt(), ArrayAttr::get(context, path), origin));
+    }
+    op->setAttr(debug::kDbgInstanceAttr, ArrayAttr::get(context, newEntries));
+  }
 
   // Prefix the "name" attribute, when present.
   if (auto nameAttr = op->getAttrOfType<StringAttr>("name"))
@@ -1999,7 +2029,7 @@ LogicalResult Inliner::processInto(StringRef prefix, InliningLevel &il,
 
     InliningLevel childIL(il.mic, childModule);
     setActiveNLAsForChild(il.activeNLAs, childIL, instance);
-    createDebugScope(childIL, instance, il.debugScope);
+    createDebugScope(childIL, instance, &il);
 
     // Create the wire mapping for results + ports.
     auto nestedPrefix = (prefix + instance.getName() + "_").str();
@@ -2075,12 +2105,42 @@ LogicalResult Inliner::processInstances(FModuleOp module, bool flatten) {
 }
 
 void Inliner::createDebugScope(InliningLevel &il, InstanceOp instance,
-                               Value parentScope) {
+                               InliningLevel *parentIL) {
+  // A scope is located at the instance. Record where the inlined module is
+  // defined under the key dedup uses for the modules it merges.
+  auto origins =
+      debug::getModuleLocs(il.childModule, il.childModule.getModuleNameAttr());
+  Value parentScope;
+  if (parentIL) {
+    parentScope = parentIL->debugScope;
+    il.debugPath = parentIL->debugPath;
+  }
+
+  // The scope takes the description of the instance. After dedup it has
+  // one for each merged module, and the scope keeps them all: the first is
+  // of the module the instance is in, the others say where they came from.
+  auto entries = instance->getAttrOfType<ArrayAttr>(debug::kDbgInstanceAttr);
+  if (entries && !entries.empty()) {
+    auto first = *entries.getAsRange<debug::InstanceAttr>().begin();
+    auto scopeOp = debug::ScopeOp::create(
+        il.mic.b, instance.getLoc(), first.getName(),
+        instance.getModuleNameAttr().getAttr(), parentScope,
+        first.getTypeName(), first.getExt());
+    if (entries.size() > 1 || first.getModule())
+      scopeOp->setAttr(debug::kDbgInstanceAttr, entries);
+    scopeOp->setAttr(debug::kDbgModuleLocsAttr, origins);
+    il.debugScope = scopeOp;
+    il.debugPath.push_back(first.getName());
+    return;
+  }
+
   auto op = debug::ScopeOp::create(
       il.mic.b, instance.getLoc(), instance.getInstanceNameAttr(),
       instance.getModuleNameAttr().getAttr(), parentScope);
+  op->setAttr(debug::kDbgModuleLocsAttr, origins);
   debugScopes.push_back(op);
   il.debugScope = op;
+  il.debugPath.push_back(instance.getInstanceNameAttr());
 }
 
 LogicalResult Inliner::inlineModules() {

@@ -59,6 +59,16 @@ inline void copyInstanceAttr(mlir::Operation *from, mlir::Operation *to) {
     to->setAttr(kDbgInstanceAttr, desc);
 }
 
+/// The `dbg.module_locs` of `op`, or `{name = op's location}` if it has none.
+inline mlir::DictionaryAttr getModuleLocs(mlir::Operation *op,
+                                          mlir::StringAttr name) {
+  if (auto locs = op->getAttrOfType<mlir::DictionaryAttr>(kDbgModuleLocsAttr))
+    return locs;
+  return mlir::DictionaryAttr::get(
+      op->getContext(),
+      mlir::NamedAttribute(name, mlir::LocationAttr(op->getLoc())));
+}
+
 } // namespace circt::debug
 
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_H

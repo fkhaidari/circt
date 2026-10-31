@@ -777,3 +777,27 @@ firrtl.circuit "InstanceChoiceDedup" attributes {annotations = [{
     firrtl.instance w3 @Wrapper3()
   }
 }
+
+// -----
+
+// A debug operation in only one of the modules must not shift the comparison:
+// the diagnostic points at the real difference.
+// expected-error@below {{module "Test1" not deduplicated with "Test0"}}
+firrtl.circuit "MustDedup" attributes {annotations = [{
+      class = "firrtl.transforms.MustDeduplicateAnnotation",
+      modules = ["~MustDedup|Test0", "~MustDedup|Test1"]
+    }]} {
+  firrtl.module @MustDedup() {
+    firrtl.instance test0 @Test0(in a: !firrtl.uint<8>)
+    firrtl.instance test1 @Test1(in a: !firrtl.uint<8>)
+  }
+  firrtl.module private @Test0(in %a: !firrtl.uint<8>) {
+    dbg.variable "wa", %a : !firrtl.uint<8>
+    // expected-note@below {{first operation is a firrtl.wire}}
+    %w = firrtl.wire : !firrtl.uint<8>
+  }
+  firrtl.module private @Test1(in %a: !firrtl.uint<8>) {
+    // expected-note@below {{second operation is a firrtl.constant}}
+    %c1_ui8 = firrtl.constant 1 : !firrtl.uint<8>
+  }
+}

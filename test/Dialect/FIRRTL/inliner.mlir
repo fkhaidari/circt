@@ -891,6 +891,82 @@ firrtl.circuit "TrackFlatteningInDebugInfo" {
   }
 }
 
+// An inlined instance becomes a scope with the class from its description.
+// A kept instance moved out of an inlined module names the inlined instances
+// on the way in its `path`, and the module it was in as its origin.
+// CHECK-LABEL: firrtl.circuit "InstanceScopes"
+firrtl.circuit "InstanceScopes" {
+  // CHECK: firrtl.module @InstanceScopes
+  firrtl.module @InstanceScopes() {
+    // CHECK-NEXT: [[FOO:%.+]] = dbg.scope "foo", "Foo" typeName "ClsFoo" {dbg.module_locs = {Foo = #loc{{[0-9]+}}}}
+    // CHECK-NEXT: [[BAR:%.+]] = dbg.scope "bar", "Bar" scope [[FOO]] typeName "ClsBar"
+    // CHECK-NEXT: firrtl.wire
+    // CHECK-NEXT: dbg.variable "a", {{%.+}} scope [[BAR]]
+    // CHECK-NEXT: firrtl.instance foo_baz {dbg.instance = [#dbg.instance<name = "baz", path = ["foo"], origin = "Foo">]} @Baz()
+    // CHECK-NEXT: [[MID:%.+]] = dbg.scope "mid", "Mid"
+    // CHECK-NEXT: [[MFOO:%.+]] = dbg.scope "foo", "Foo" scope [[MID]]
+    // CHECK:      firrtl.instance mid_foo_baz {dbg.instance = [#dbg.instance<name = "baz", path = ["mid", "foo"], origin = "Foo">]} @Baz()
+    // CHECK-NOT:  dbg.scope
+    firrtl.instance foo {dbg.instance = [#dbg.instance<name = "foo", typeName = "ClsFoo">]} @Foo()
+    firrtl.instance mid {dbg.instance = [#dbg.instance<name = "mid">]} @Mid()
+  }
+  firrtl.module private @Mid() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    firrtl.instance foo {dbg.instance = [#dbg.instance<name = "foo">]} @Foo()
+  }
+  firrtl.module private @Foo() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    firrtl.instance bar {dbg.instance = [#dbg.instance<name = "bar", typeName = "ClsBar">]} @Bar()
+    firrtl.instance baz {dbg.instance = [#dbg.instance<name = "baz">]} @Baz()
+  } loc("Foo.scala":1:1)
+  firrtl.module private @Bar() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    %wire = firrtl.wire : !firrtl.uint<1>
+    dbg.variable "a", %wire : !firrtl.uint<1>
+  }
+  firrtl.module private @Baz() {}
+}
+
+// Flattening takes the class of a nested instance from its description.
+// CHECK-LABEL: firrtl.circuit "FlattenInstanceScopes"
+firrtl.circuit "FlattenInstanceScopes" {
+  // CHECK: firrtl.module @FlattenInstanceScopes
+  firrtl.module @FlattenInstanceScopes() attributes {annotations = [{class = "firrtl.transforms.FlattenAnnotation"}]} {
+    // CHECK-NEXT: [[FOO:%.+]] = dbg.scope "foo", "Foo"
+    // CHECK-NEXT: [[BAR:%.+]] = dbg.scope "bar", "Bar" scope [[FOO]]
+    // CHECK-NEXT: firrtl.wire
+    // CHECK-NEXT: dbg.variable "a", {{%.+}} scope [[BAR]]
+    // CHECK-NOT:  dbg.scope
+    firrtl.instance foo {dbg.instance = [#dbg.instance<name = "foo">]} @Foo()
+  }
+  firrtl.module private @Foo() {
+    firrtl.instance bar {dbg.instance = [#dbg.instance<name = "bar">]} @Bar()
+  }
+  firrtl.module private @Bar() {
+    %wire = firrtl.wire : !firrtl.uint<1>
+    dbg.variable "a", %wire : !firrtl.uint<1>
+  }
+}
+
+// After dedup an instance has a description for each merged module. The
+// inlined scope keeps them all, and the body goes on it once.
+// CHECK-LABEL: firrtl.circuit "DedupInstanceScopes"
+firrtl.circuit "DedupInstanceScopes" {
+  // CHECK: firrtl.module private @P1
+  firrtl.module private @P1() attributes {dbg.module_locs = {P1 = loc("P1.scala":1:1), P2 = loc("P2.scala":1:1)}} {
+    // CHECK-NEXT: [[S1:%.+]] = dbg.scope "s", "S1" {dbg.instance = [#dbg.instance<name = "s">, #dbg.instance<name = "s", module = "S2", origin = "P2">], dbg.module_locs = {S1 = #loc{{[0-9]+}}, S2 = #loc{{[0-9]+}}}}
+    // CHECK-NEXT: firrtl.wire
+    // CHECK-NEXT: dbg.variable "s1var", {{%.+}} scope [[S1]] {dbg.merged_from = "S1"}
+    // CHECK-NEXT: dbg.variable "s2var", {{%.+}} scope [[S1]] {dbg.merged_from = "S2"}
+    firrtl.instance s {dbg.instance = [#dbg.instance<name = "s">, #dbg.instance<name = "s", module = "S2", origin = "P2">]} @S1()
+  }
+  firrtl.module private @S1() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}], dbg.module_locs = {S1 = loc("S1.scala":1:1), S2 = loc("S2.scala":1:1)}} {
+    %wire = firrtl.wire : !firrtl.uint<1>
+    dbg.variable "s1var", %wire : !firrtl.uint<1>
+    dbg.variable "s2var", %wire {dbg.merged_from = "S2"} : !firrtl.uint<1>
+  }
+  firrtl.module @DedupInstanceScopes() {
+    firrtl.instance p @P1()
+  }
+}
+
 // -----
 
 // Test proper hierarchical inlining of RefType

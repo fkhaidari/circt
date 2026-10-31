@@ -136,6 +136,8 @@ passes that know nothing about debug info carry them along.
   relative to the struct; `dir` on the variable gives the absolute direction.
 - **`ext`** on `#dbg.instance`, `dbg.scope`, `dbg.value` and `dbg.enum` maps a language to a
   JSON string, written as `x-<lang>`.
+- **Dedup** copies the debug ops of a merged module into the survivor and marks
+  the root ops with `dbg.merged_from`.
 
 A few facts belong to a module and have no op to live on, so they are module
 attributes:
