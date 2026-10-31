@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Dialect/Comb/CombOps.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/Emit/EmitOps.h"
 #include "circt/Dialect/HW/HWAttributes.h"
 #include "circt/Dialect/HW/HWOps.h"
@@ -72,7 +73,7 @@ public:
             addVivadoRAMAddressConflictSynthesisBugWorkaround),
         mlirModuleNamespace(mlirModuleNamespace) {}
 
-  void generateMemory(HWModuleOp op, FirMemory mem);
+  void generateMemory(HWModuleOp op, FirMemory mem, bool debugInfo);
 };
 
 struct HWMemSimImplPass : public impl::HWMemSimImplBase<HWMemSimImplPass> {
@@ -181,7 +182,8 @@ Value HWMemSimImpl::addPipelineStages(ImplicitLocOpBuilder &b,
   return data;
 }
 
-void HWMemSimImpl::generateMemory(HWModuleOp op, FirMemory mem) {
+void HWMemSimImpl::generateMemory(HWModuleOp op, FirMemory mem,
+                                  bool debugInfo) {
   ImplicitLocOpBuilder b(op.getLoc(), op.getBody());
 
   InnerSymbolNamespace moduleNamespace(op);
@@ -202,6 +204,12 @@ void HWMemSimImpl::generateMemory(HWModuleOp op, FirMemory mem) {
   sv::RegOp reg =
       sv::RegOp::create(b, UnpackedArrayType::get(dataType, mem.depth),
                         b.getStringAttr("Memory"));
+
+  if (debugInfo)
+    debug::VariableOp::create(
+        b, reg.getNameAttr(), reg, /*scope=*/Value{},
+        debug::VariableKindAttr::get(b.getContext(), debug::VariableKind::Mem),
+        /*dir=*/debug::PortDirectionAttr{});
 
   if (addVivadoRAMAddressConflictSynthesisBugWorkaround) {
     if (mem.readLatency == 0) {
@@ -752,8 +760,13 @@ void HWMemSimImplPass::runOnOperation() {
       // 2. undefined read-under-write behavior.
       if (replSeqMem && ((mem.readLatency >= 1 && mem.writeLatency >= 1) &&
                          mem.dataWidth > 0)) {
-        HWModuleExternOp::create(builder, oldModule.getLoc(), nameAttr,
-                                 oldModule.getPortList());
+        auto extModule = HWModuleExternOp::create(
+            builder, oldModule.getLoc(), nameAttr, oldModule.getPortList());
+
+        // An external module has no contents to describe.
+        if (oldModule->hasAttr(debug::kDbgLoweredAttr) ||
+            oldModule->hasAttr(debug::kDbgMemoryAttr))
+          extModule->setAttr(debug::kDbgLoweredAttr, builder.getUnitAttr());
       } else {
         auto newModule = HWModuleOp::create(builder, oldModule.getLoc(),
                                             nameAttr, oldModule.getPortList());
@@ -763,11 +776,15 @@ void HWMemSimImplPass::runOnOperation() {
             builder.getStringAttr("VCS coverage exclude_file"));
         newModule.setPrivate();
 
+        if (auto lowered = oldModule->getAttr(debug::kDbgLoweredAttr))
+          newModule->setAttr(debug::kDbgLoweredAttr, lowered);
+
         HWMemSimImpl(readEnableMode, addMuxPragmas, disableMemRandomization,
                      disableRegRandomization,
                      addVivadoRAMAddressConflictSynthesisBugWorkaround,
                      mlirModuleNamespace)
-            .generateMemory(newModule, mem);
+            .generateMemory(newModule, mem,
+                            oldModule->hasAttr(debug::kDbgMemoryAttr));
         if (auto fragments = oldModule->getAttr(emit::getFragmentsAttrName()))
           newModule->setAttr(emit::getFragmentsAttrName(), fragments);
       }

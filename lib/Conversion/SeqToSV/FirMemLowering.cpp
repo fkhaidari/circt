@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "FirMemLowering.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/HW/HWAttributes.h"
 #include "circt/Support/Path.h"
 #include "mlir/IR/Threading.h"
@@ -323,7 +324,32 @@ FirMemLowering::createMemoryModule(FirMemConfig &mem,
   if (auto outputFile = computeCommonOutputFile(memOps))
     genOp->setAttr("output_file", outputFile);
 
+  // Debug info: the module is not in the source,
+  // unless debug info describes the memory as an instance of it.
+  // Visit every memory,
+  // so that its scopes are cached for `lowerMemoriesInModule`.
+  bool described = false;
+  for (auto memOp : memOps)
+    if (auto name = memOp.getNameAttr())
+      described |= getMemoryScopes(memOp->getBlock()).contains(name);
+
+  if (described)
+    genOp->setAttr(debug::kDbgMemoryAttr, UnitAttr::get(context));
+  else if (auto lowered = memOps.front()->getAttr(debug::kDbgLoweredAttr))
+    genOp->setAttr(debug::kDbgLoweredAttr, lowered);
+
   return genOp;
+}
+
+const FirMemLowering::MemoryScopes &
+FirMemLowering::getMemoryScopes(Block *block) {
+  auto [it, inserted] = memoryScopes.try_emplace(block);
+  if (inserted)
+    for (auto instOp : block->getOps<debug::InstanceOp>())
+      if (!instOp.getModuleNameAttr())
+        it->second[instOp.getLinkedName()].push_back(instOp);
+
+  return it->second;
 }
 
 /// Replace all `FirMemOp`s in an HW module with an instance of the
@@ -405,6 +431,16 @@ void FirMemLowering::lowerMemoriesInModule(
         ArrayAttr{}, memOp.getInnerSymAttr());
     for (auto [oldOutput, newOutput] : llvm::zip(outputs, instOp.getResults()))
       oldOutput.replaceAllUsesWith(newOutput);
+
+    // Point the debug scopes of the memory at the instance.
+    auto memNameAttr = memOp.getNameAttr();
+    auto scopesIt = memoryScopes.find(memOp->getBlock());
+
+    if (memNameAttr && scopesIt != memoryScopes.end())
+      for (auto scopeOp : scopesIt->second.lookup(memNameAttr)) {
+        scopeOp.setModuleNameAttr(genOp.getModuleNameAttr());
+        scopeOp.setLinkageNameAttr(instOp.getInstanceNameAttr());
+      }
 
     // Carry attributes over from the `FirMemOp` to the `InstanceOp`.
     auto defaultAttrNames = memOp.getAttributeNames();

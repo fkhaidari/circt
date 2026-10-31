@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLUtils.h"
@@ -130,6 +131,9 @@ struct LowerMemoryPass
 
   /// A sequence of operations that should be erased later.
   SetVector<Operation *> operationsToErase;
+
+  /// Whether the circuit carries debug info.
+  bool hasDebugInfo = false;
 };
 } // end anonymous namespace
 
@@ -245,6 +249,10 @@ void LowerMemoryPass::lowerMemory(MemOp mem, const FirMemory &summary) {
       b, mem->getLoc(), wrapperName,
       ConventionAttr::get(context, Convention::Internal), ports);
   SymbolTable::setSymbolVisibility(wrapper, SymbolTable::Visibility::Private);
+
+  // Debug info: the module is not in the source.
+  if (hasDebugInfo)
+    wrapper->setAttr(debug::kDbgLoweredAttr, b.getUnitAttr());
 
   // Create an instance of the external memory module. The instance has the
   // same name as the target module.
@@ -535,6 +543,8 @@ void LowerMemoryPass::runOnOperation() {
   auto circuit = getOperation();
   symbolTable = &getAnalysis<SymbolTable>();
   circuitNamespace.add(circuit);
+
+  hasDebugInfo = debug::containsDebugOps(circuit);
 
   // We iterate the circuit from top-to-bottom.  This ensures that we get
   // consistent memory names.  (Memory modules will be inserted before the

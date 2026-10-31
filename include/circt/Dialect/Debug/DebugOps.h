@@ -48,6 +48,9 @@ inline constexpr llvm::StringLiteral kDbgMemoryAttr =
 inline constexpr llvm::StringLiteral kDbgModuleInfoAttr =
     DebugDialect::ModuleinfoAttrHelper::getNameStr();
 
+/// Whether `root` holds any debug dialect op.
+bool containsDebugOps(mlir::Operation *root);
+
 /// The `dbg.module_locs` of `op`, or `{name = op's location}` if it has none.
 inline mlir::DictionaryAttr getModuleLocs(mlir::Operation *op,
                                           mlir::StringAttr name) {

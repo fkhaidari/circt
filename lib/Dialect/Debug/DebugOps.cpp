@@ -292,3 +292,14 @@ LogicalResult EnumOp::verify() {
 
   return verifyExt(*this, getExtAttr());
 }
+
+bool circt::debug::containsDebugOps(Operation *root) {
+  auto result = root->walk([](Operation *op) {
+    if (isa_and_nonnull<DebugDialect>(op->getDialect()))
+      return WalkResult::interrupt();
+
+    return WalkResult::advance();
+  });
+
+  return result.wasInterrupted();
+}

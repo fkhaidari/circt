@@ -10,6 +10,7 @@
 #ifndef CONVERSION_SEQTOSV_FIRMEMLOWERING_H
 #define CONVERSION_SEQTOSV_FIRMEMLOWERING_H
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/Seq/SeqOps.h"
 #include "circt/Support/LLVM.h"
@@ -99,6 +100,12 @@ private:
    */
   FlatSymbolRefAttr getOrCreateSchema();
 
+  /// The instance scopes of a block that no lowering has resolved yet,
+  /// keyed by linked name, which is the name of the memory they describe.
+  /// Memory names are not unique, so a key can hold several scopes.
+  using MemoryScopes = DenseMap<StringAttr, SmallVector<debug::InstanceOp, 1>>;
+  const MemoryScopes &getMemoryScopes(Block *block);
+
 private:
   MLIRContext *context;
   ModuleOp circuit;
@@ -107,6 +114,10 @@ private:
   Namespace globalNamespace;
 
   DenseMap<hw::HWModuleOp, size_t> moduleIndex;
+
+  /// Filled while creating the memory modules,
+  /// read while lowering in parallel.
+  DenseMap<Block *, MemoryScopes> memoryScopes;
 
   hw::HWGeneratorSchemaOp schemaOp;
 };
