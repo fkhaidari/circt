@@ -812,6 +812,10 @@ EmittedExpr FileEmitter::emitExpression(Value value) {
   if (auto readOp = dyn_cast<sv::ReadInOutOp>(op))
     return emitExpression(readOp.getInput());
 
+  // HGLDD has no enum types, so a `dbg.enum` value is emitted as plain logic.
+  if (isa<debug::ValueOp, debug::EnumOp>(op))
+    return emitExpression(op->getOperand(0));
+
   // Emit unary and binary combinational ops as their corresponding HGLDD
   // operation.
   StringRef unaryOpcode = TypeSwitch<Operation *, StringRef>(op)
