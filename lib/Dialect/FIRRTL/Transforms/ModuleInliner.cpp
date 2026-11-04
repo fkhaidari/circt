@@ -1611,6 +1611,8 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
     return updateDebugScope(varOp), false;
   if (auto scopeOp = dyn_cast<debug::ScopeOp>(op))
     return updateDebugScope(scopeOp), false;
+  if (auto infoOp = dyn_cast<debug::ModuleInfoOp>(op))
+    return updateDebugScope(infoOp), false;
 
   // Prefix the "name" attribute, when present.
   if (auto nameAttr = op->getAttrOfType<StringAttr>("name"))
