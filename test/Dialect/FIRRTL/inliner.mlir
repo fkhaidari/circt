@@ -891,6 +891,75 @@ firrtl.circuit "TrackFlatteningInDebugInfo" {
   }
 }
 
+// An inlined dbg.moduleinfo takes the instance's scope; the parent's stays
+// unscoped.
+// CHECK-LABEL: firrtl.circuit "InlineModuleInfo"
+firrtl.circuit "InlineModuleInfo" {
+  // CHECK: firrtl.module @InlineModuleInfo
+  firrtl.module @InlineModuleInfo() {
+    // CHECK-NEXT: dbg.moduleinfo "Top"{{$}}
+    // CHECK-NEXT: [[SCOPE_C:%.+]] = dbg.scope "c", "Child"
+    // CHECK-NEXT: dbg.moduleinfo "Child" scope [[SCOPE_C]]
+    dbg.moduleinfo "Top"
+    firrtl.instance c @Child()
+  }
+  // CHECK-NOT: @Child
+  firrtl.module private @Child() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    dbg.moduleinfo "Child"
+  }
+}
+
+// A scoped dbg.moduleinfo keeps its scope, which gets chained to the new one.
+// CHECK-LABEL: firrtl.circuit "InlineNestedModuleInfo"
+firrtl.circuit "InlineNestedModuleInfo" {
+  // CHECK: firrtl.module @InlineNestedModuleInfo
+  firrtl.module @InlineNestedModuleInfo() {
+    // CHECK-NEXT: dbg.moduleinfo "A"{{$}}
+    // CHECK-NEXT: [[SCOPE_B:%.+]] = dbg.scope "b", "B"
+    // CHECK-NEXT: dbg.moduleinfo "B" scope [[SCOPE_B]]
+    // CHECK-NEXT: [[SCOPE_C:%.+]] = dbg.scope "c", "C" scope [[SCOPE_B]]
+    // CHECK-NEXT: dbg.moduleinfo "C" scope [[SCOPE_C]]
+    // CHECK-NEXT: [[SCOPE_D:%.+]] = dbg.scope "d", "D" scope [[SCOPE_B]]
+    // CHECK-NEXT: dbg.moduleinfo "D" scope [[SCOPE_D]]
+    dbg.moduleinfo "A"
+    firrtl.instance b @B()
+  }
+  // CHECK-NOT: @B
+  firrtl.module private @B() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    dbg.moduleinfo "B"
+    %0 = dbg.scope "c", "C"
+    dbg.moduleinfo "C" scope %0
+    firrtl.instance d @D()
+  }
+  // CHECK-NOT: @D
+  firrtl.module private @D() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    dbg.moduleinfo "D"
+  }
+}
+
+// CHECK-LABEL: firrtl.circuit "FlattenModuleInfo"
+firrtl.circuit "FlattenModuleInfo" {
+  // CHECK: firrtl.module @FlattenModuleInfo
+  firrtl.module @FlattenModuleInfo() attributes {annotations = [{class = "firrtl.transforms.FlattenAnnotation"}]} {
+    // CHECK-NEXT: dbg.moduleinfo "Top"{{$}}
+    // CHECK-NEXT: [[SCOPE_FOO:%.+]] = dbg.scope "foo", "Foo"
+    // CHECK-NEXT: dbg.moduleinfo "Foo" scope [[SCOPE_FOO]]
+    // CHECK-NEXT: [[SCOPE_BAR:%.+]] = dbg.scope "bar", "Bar" scope [[SCOPE_FOO]]
+    // CHECK-NEXT: dbg.moduleinfo "Bar" scope [[SCOPE_BAR]]
+    dbg.moduleinfo "Top"
+    firrtl.instance foo @Foo()
+  }
+  // CHECK-NOT: @Foo
+  firrtl.module private @Foo() {
+    dbg.moduleinfo "Foo"
+    firrtl.instance bar @Bar()
+  }
+  // CHECK-NOT: @Bar
+  firrtl.module private @Bar() {
+    dbg.moduleinfo "Bar"
+  }
+}
+
 // -----
 
 // Test proper hierarchical inlining of RefType
