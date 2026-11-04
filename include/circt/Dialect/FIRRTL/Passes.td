@@ -809,6 +809,11 @@ def MaterializeDebugInfo :
     registers, and instances throughout the pipeline. The `DebugInfo` analysis
     can then be used at a later point in the pipeline to obtain a source
     language view into the lowered IR.
+
+    A port or declaration that existing Debug ops already describe, for example
+    those converted from a frontend's intrinsics, gets no variable. The pass
+    assumes that a frontend which describes a declaration describes all of it.
+    A declaration that is described only in part gets no variable for the rest.
   }];
   let dependentDialects = ["debug::DebugDialect"];
 }

@@ -39,14 +39,20 @@ LogicalResult firtool::populatePreprocessTransforms(mlir::PassManager &pm,
        /*ignoreAnnotationUnknown=*/opt.shouldDisableUnknownAnnotations(),
        /*noRefTypePorts=*/opt.shouldLowerNoRefTypePortAnnotations()}));
 
-  if (opt.shouldEnableDebugInfo())
-    pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
-        firrtl::createMaterializeDebugInfo());
-
   pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerIntmodules(
       {/*fixupEICGWrapper=*/opt.shouldFixupEICGWrapper()}));
   pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
-      firrtl::createLowerIntrinsics());
+      firrtl::createLowerIntrinsics(
+          {/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
+  // `firrtl.class` is not an FModuleOp, so it needs its own nest. Debug
+  // intrinsics in class bodies are only erased, with a warning under -g.
+  pm.nest<firrtl::CircuitOp>().nest<firrtl::ClassOp>().addPass(
+      firrtl::createLowerIntrinsics(
+          {/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
+
+  if (opt.shouldEnableDebugInfo())
+    pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
+        firrtl::createMaterializeDebugInfo());
 
   return success();
 }
