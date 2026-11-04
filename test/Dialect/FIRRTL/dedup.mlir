@@ -1022,3 +1022,43 @@ firrtl.circuit "PublicModuleNoDedup" {
     firrtl.instance bar sym @sym @Bar_2()
   }
 }
+
+// Modules whose debug variables have different names must not dedup.
+// CHECK-LABEL: firrtl.circuit "DebugNamesDiffer"
+firrtl.circuit "DebugNamesDiffer" {
+  // CHECK: firrtl.module private @DbgA
+  firrtl.module private @DbgA(in %i: !firrtl.uint<1>) {
+    dbg.variable "a", %i : !firrtl.uint<1>
+  }
+  // CHECK: firrtl.module private @DbgB
+  firrtl.module private @DbgB(in %i: !firrtl.uint<1>) {
+    dbg.variable "b", %i : !firrtl.uint<1>
+  }
+  firrtl.module @DebugNamesDiffer() {
+    // CHECK: firrtl.instance a @DbgA
+    // CHECK-NEXT: firrtl.instance b @DbgB
+    %a_i = firrtl.instance a @DbgA(in i: !firrtl.uint<1>)
+    %b_i = firrtl.instance b @DbgB(in i: !firrtl.uint<1>)
+  }
+}
+
+// FIRRTL op names stay nonessential.
+// CHECK-LABEL: firrtl.circuit "DebugNamesSameNodeNamesDiffer"
+firrtl.circuit "DebugNamesSameNodeNamesDiffer" {
+  // CHECK: firrtl.module private @DbgE
+  firrtl.module private @DbgE(in %i: !firrtl.uint<1>) {
+    %x = firrtl.node %i : !firrtl.uint<1>
+    dbg.variable "a", %x : !firrtl.uint<1>
+  }
+  // CHECK-NOT: firrtl.module private @DbgF
+  firrtl.module private @DbgF(in %i: !firrtl.uint<1>) {
+    %y = firrtl.node %i : !firrtl.uint<1>
+    dbg.variable "a", %y : !firrtl.uint<1>
+  }
+  firrtl.module @DebugNamesSameNodeNamesDiffer() {
+    // CHECK: firrtl.instance e @DbgE
+    // CHECK-NEXT: firrtl.instance f @DbgE
+    %e_i = firrtl.instance e @DbgE(in i: !firrtl.uint<1>)
+    %f_i = firrtl.instance f @DbgF(in i: !firrtl.uint<1>)
+  }
+}
