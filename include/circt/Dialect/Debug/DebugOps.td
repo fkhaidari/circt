@@ -13,10 +13,23 @@ include "circt/Dialect/Debug/DebugDialect.td"
 include "circt/Dialect/Debug/DebugTypes.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
 
 class DebugOp<string mnemonic, list<Trait> traits = []> :
   Op<DebugDialect, mnemonic, traits>;
+
+def VariableKind : I32EnumAttr<"VariableKind",
+    "what the source declares a variable as", [
+      I32EnumAttrCase<"Input", 0, "input">,
+      I32EnumAttrCase<"Output", 1, "output">,
+      I32EnumAttrCase<"InOut", 2, "inout">,
+      I32EnumAttrCase<"Wire", 3, "wire">,
+      I32EnumAttrCase<"Reg", 4, "reg">,
+      I32EnumAttrCase<"Node", 5, "node">
+    ]> {
+  let cppNamespace = "circt::debug";
+}
 
 
 def ScopeOp : DebugOp<"scope"> {
@@ -69,21 +82,38 @@ def VariableOp : DebugOp<"variable"> {
     variants. Source-language type information is not carried on the variable
     itself; wrap the value in a `dbg.value` to attach it.
 
+    The optional `kind` is what the source declares the variable as: a port
+    (`input`, `output`, `inout`, the last for analog ports), or a `wire`,
+    `reg` or `node`. Without `kind` the producer did not say, for example for
+    an empty aggregate.
+
     See the rationale for examples and details. See the `dbg.scope` operation
     for additional details on how to use the `scope` operand.
   }];
   let arguments = (ins
     StrAttr:$name,
     AnyType:$value,
-    Optional<ScopeType>:$scope
+    Optional<ScopeType>:$scope,
+    OptionalAttr<VariableKind>:$kind
   );
   let assemblyFormat = [{
-    $name `,` $value (`scope` $scope^)? attr-dict `:` type($value)
+    $name `,` $value (`scope` $scope^)? (`kind` $kind^)? attr-dict
+        `:` type($value)
   }];
+  let builders = [
+    OpBuilder<(ins "::mlir::StringAttr":$name, "::mlir::Value":$value,
+                   "::mlir::Value":$scope), [{
+      build($_builder, $_state, name, value, scope, VariableKindAttr{});
+    }]>,
+    OpBuilder<(ins "::llvm::StringRef":$name, "::mlir::Value":$value,
+                   "::mlir::Value":$scope), [{
+      build($_builder, $_state, $_builder.getStringAttr(name), value, scope);
+    }]>
+  ];
 }
 
 
-def ValueOp : DebugOp<"value"> {
+def ValueOp : DebugOp<"value", [Pure]> {
   let summary = "Attach source-language metadata to a value";
   let description = [{
     Annotates an SSA value with additional source-language information: the
@@ -93,6 +123,10 @@ def ValueOp : DebugOp<"value"> {
     unwrap it to reach the underlying value. Keeping the metadata on a
     separate wrapper keeps `dbg.variable` and the aggregate ops orthogonal to
     source-language type information.
+
+    `params` is language specific data that the compiler does not read. It
+    holds the frontend's JSON string as a one-element array. The string is an
+    object whose top-level keys start with `x-`, one per language.
 
     An enum-typed value embeds a `dbg.enum`, so no enum linkage is carried on
     the wrapper itself. Freshly-created ops with no users are tolerated by
@@ -157,11 +191,25 @@ def StructOp : DebugOp<"struct", [
     the debug info. This includes structs, unions, bidirectional bundles,
     interfaces, classes, and other similar structures.
 
+    The optional `flips` marks, positionally with the fields, those that are
+    flipped (point against the struct's direction), as in a bidirectional
+    bundle. Absent means no field is flipped.
+
     See the rationale for examples and details.
   }];
-  let arguments = (ins Variadic<AnyType>:$fields, StrArrayAttr:$names);
+  let arguments = (ins
+    Variadic<AnyType>:$fields,
+    StrArrayAttr:$names,
+    OptionalAttr<DenseBoolArrayAttr>:$flips
+  );
   let results = (outs StructType:$result);
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+  let builders = [
+    OpBuilder<(ins "::mlir::ValueRange":$fields, "::mlir::ArrayAttr":$names), [{
+      build($_builder, $_state, fields, names, ::mlir::DenseBoolArrayAttr{});
+    }]>
+  ];
 }
 
 
@@ -180,6 +228,35 @@ def ArrayOp : DebugOp<"array", [Pure, SameTypeOperands]> {
   let arguments = (ins Variadic<AnyType>:$elements);
   let results = (outs ArrayType:$result);
   let hasCustomAssemblyFormat = 1;
+}
+
+
+def ModuleInfoOp : DebugOp<"moduleinfo"> {
+  let summary = "Source-language class of the enclosing module or a scope";
+  let description = [{
+    The source-language class (type) of the enclosing module, or of the given
+    `scope` after the module was inlined. A module without this op was made by
+    the compiler, not written in the source.
+
+    `params` is language specific data that the compiler does not read. It
+    holds the frontend's JSON string as a one-element array, as on
+    `dbg.value`. The string is an object whose top-level keys start with `x-`.
+
+    At most one unscoped `dbg.moduleinfo` per module, and at most one per
+    scope, is expected. The passes that create and consume it (LowerIntrinsics,
+    the UHDI emitter) check this, not the op verifier, because duplicates can
+    appear transiently inside `when` or `layerblock` regions.
+
+    Extmodules have no body and are not covered.
+  }];
+  let arguments = (ins
+    StrAttr:$typeName,
+    OptionalAttr<ArrayAttr>:$params,
+    Optional<ScopeType>:$scope
+  );
+  let assemblyFormat = [{
+    $typeName (`params` $params^)? (`scope` $scope^)? attr-dict
+  }];
 }
 
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_TD

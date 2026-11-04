@@ -1082,3 +1082,22 @@ firrtl.circuit "DebugNamesSameNodeNamesDiffer" {
     %f_i = firrtl.instance f @DbgF(in i: !firrtl.uint<1>)
   }
 }
+
+// Modules whose dbg.moduleinfo differ must not dedup.
+// CHECK-LABEL: firrtl.circuit "ModuleInfoDiffer"
+firrtl.circuit "ModuleInfoDiffer" {
+  // CHECK: firrtl.module private @InfoA
+  firrtl.module private @InfoA() {
+    dbg.moduleinfo "A"
+  }
+  // CHECK: firrtl.module private @InfoB
+  firrtl.module private @InfoB() {
+    dbg.moduleinfo "B"
+  }
+  firrtl.module @ModuleInfoDiffer() {
+    // CHECK: firrtl.instance a @InfoA
+    // CHECK-NEXT: firrtl.instance b @InfoB
+    firrtl.instance a @InfoA()
+    firrtl.instance b @InfoB()
+  }
+}
