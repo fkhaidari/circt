@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugDialect.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAttributes.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
@@ -85,6 +86,19 @@ struct ModuleInfo {
 static bool operator==(const ModuleInfo &lhs, const ModuleInfo &rhs) {
   return lhs.structuralHash == rhs.structuralHash &&
          lhs.referredModuleNames == rhs.referredModuleNames;
+}
+
+/// Check whether an attribute of an operation can be ignored when comparing
+/// modules. The `name` of a Debug dialect operation is visible to debug info
+/// consumers, so it is essential.
+static bool isNonessential(const DenseSet<Attribute> &nonessentialAttributes,
+                           Operation *op, StringAttr attrName) {
+  // Only dbg.variable carries `name` today; other Debug attributes
+  // (instanceName, moduleName, names) are already hashed.
+  if (isa_and_nonnull<debug::DebugDialect>(op->getDialect()) &&
+      attrName == "name")
+    return false;
+  return nonessentialAttributes.contains(attrName);
 }
 
 /// This struct contains constant string attributes shared across different
@@ -239,8 +253,9 @@ private:
       auto name = namedAttr.getName();
       auto value = namedAttr.getValue();
 
-      // Skip names and annotations.
-      if (constants.nonessentialAttributes.contains(name))
+      // Skip nonessential attributes (names, annotations, ...), except the
+      // name of a Debug op.
+      if (isNonessential(constants.nonessentialAttributes, op, name))
         continue;
 
       // Hash the attribute name (an interned pointer).
@@ -628,7 +643,7 @@ struct Equivalence {
     DenseSet<Attribute> seenAttrs;
     for (auto namedAttr : aDict) {
       auto attrName = namedAttr.getName();
-      if (nonessentialAttributes.contains(attrName))
+      if (isNonessential(nonessentialAttributes, a, attrName))
         continue;
 
       auto aAttr = namedAttr.getValue();
@@ -692,7 +707,7 @@ struct Equivalence {
         auto attrName = namedAttr.getName();
         // Skip the attribute if we don't care about this particular one or it
         // is one that is known to be in both dictionaries.
-        if (nonessentialAttributes.contains(attrName) ||
+        if (isNonessential(nonessentialAttributes, b, attrName) ||
             seenAttrs.contains(attrName))
           continue;
         // We have found an attribute that is only in the second operation.
