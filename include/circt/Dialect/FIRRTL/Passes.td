@@ -669,11 +669,21 @@ def LowerIntmodules : Pass<"firrtl-lower-intmodules", "firrtl::CircuitOp"> {
   ];
 }
 
-def LowerIntrinsics : Pass<"firrtl-lower-intrinsics", "firrtl::FModuleOp"> {
+def LowerIntrinsics : InterfacePass<"firrtl-lower-intrinsics",
+                                     "firrtl::FModuleLike"> {
   let summary = "Lower intrinsics";
   let description = [{
     This pass lowers generic intrinsic ops to their implementation or op.
+
+    The `circt_debug_*` intrinsics are converted to Debug dialect ops when
+    `emit-debug-info` is set, and erased otherwise. In a `firrtl.class` body
+    they are always erased.
   }];
+  let options = [
+    Option<"emitDebugInfo", "emit-debug-info", "bool", "false",
+           "Convert debug intrinsics to Debug ops instead of erasing them">
+  ];
+  let dependentDialects = ["debug::DebugDialect"];
   let statistics = [
     Statistic<"numConverted", "num-converted", "Number of intrinsic operations lowered">,
   ];
