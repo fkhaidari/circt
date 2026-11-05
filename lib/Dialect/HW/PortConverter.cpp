@@ -243,6 +243,8 @@ void PortConverterImpl::updateInstance(hw::InstanceOp inst) {
   newInst->setDialectAttrs(inst->getDialectAttrs());
   if (auto doNotPrint = inst.getDoNotPrintAttr())
     newInst.setDoNotPrintAttr(doNotPrint);
+  if (auto scope = inst.getScope())
+    newInst.getScopeMutable().assign(scope);
 
   // Assign the backedges to the new results.
   for (auto [idx, be] : llvm::enumerate(newResults))

@@ -1082,6 +1082,38 @@ firrtl.circuit "ModuleInfoDiffer" {
   }
 }
 
+// Modules whose instances use their own local dbg.scope dedup. A module whose
+// instance has no scope differs from them.
+// CHECK-LABEL: firrtl.circuit "InstanceScope"
+firrtl.circuit "InstanceScope" {
+  firrtl.module private @ScopeLeaf() {}
+  // CHECK: firrtl.module private @ScopeA
+  // CHECK-NEXT: [[S:%.+]] = dbg.scope "c", "C"
+  // CHECK-NEXT: firrtl.instance l @ScopeLeaf() scope [[S]]
+  firrtl.module private @ScopeA() {
+    %0 = dbg.scope "c", "C"
+    firrtl.instance l @ScopeLeaf() scope %0
+  }
+  // CHECK-NOT: firrtl.module private @ScopeB
+  firrtl.module private @ScopeB() {
+    %0 = dbg.scope "c", "C"
+    firrtl.instance l @ScopeLeaf() scope %0
+  }
+  // CHECK: firrtl.module private @ScopeE
+  firrtl.module private @ScopeE() {
+    %0 = dbg.scope "c", "C"
+    firrtl.instance l @ScopeLeaf()
+  }
+  firrtl.module @InstanceScope() {
+    // CHECK: firrtl.instance a @ScopeA
+    // CHECK-NEXT: firrtl.instance b @ScopeA
+    // CHECK-NEXT: firrtl.instance e @ScopeE
+    firrtl.instance a @ScopeA()
+    firrtl.instance b @ScopeB()
+    firrtl.instance e @ScopeE()
+  }
+}
+
 // External modules whose source class names differ must not dedup.
 // CHECK-LABEL: firrtl.circuit "SourceNameDiffer"
 firrtl.circuit "SourceNameDiffer" {

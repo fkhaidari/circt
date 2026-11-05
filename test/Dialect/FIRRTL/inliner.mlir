@@ -961,6 +961,51 @@ firrtl.circuit "FlattenModuleInfo" {
   }
 }
 
+// The instances of an inlined module get its scope.
+// DBG-LABEL: firrtl.circuit "InlineInstanceScope"
+firrtl.circuit "InlineInstanceScope" {
+  // DBG: firrtl.module @InlineInstanceScope
+  firrtl.module @InlineInstanceScope() {
+    // DBG-NEXT: [[SCOPE_C:%.+]] = dbg.scope "c", "Child"
+    // DBG-NEXT: firrtl.instance c_leaf @Leaf() scope [[SCOPE_C]]
+    // DBG-NEXT: firrtl.instance c_ext @Ext() scope [[SCOPE_C]]
+    firrtl.instance c @Child()
+  }
+  // DBG-NOT: @Child
+  firrtl.module private @Child() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    firrtl.instance leaf @Leaf()
+    firrtl.instance ext @Ext()
+  }
+  firrtl.module private @Leaf() {}
+  firrtl.extmodule private @Ext()
+}
+
+// An instance that already has a scope keeps it, and the scope of a module
+// inlined through that instance is nested in it.
+// DBG-LABEL: firrtl.circuit "InlineScopedInstance"
+firrtl.circuit "InlineScopedInstance" {
+  // DBG: firrtl.module @InlineScopedInstance
+  firrtl.module @InlineScopedInstance() {
+    // DBG-NEXT: [[SCOPE_M:%.+]] = dbg.scope "m", "Mid"
+    // DBG-NEXT: [[SCOPE_C:%.+]] = dbg.scope "c", "C" scope [[SCOPE_M]]
+    // DBG-NEXT: firrtl.instance m_k @Leaf() scope [[SCOPE_C]]
+    // DBG-NEXT: [[SCOPE_D:%.+]] = dbg.scope "d", "D" scope [[SCOPE_C]]
+    // DBG-NEXT: firrtl.instance m_d_leaf @Leaf() scope [[SCOPE_D]]
+    firrtl.instance m @Mid()
+  }
+  // DBG-NOT: @Mid
+  firrtl.module private @Mid() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    %0 = dbg.scope "c", "C"
+    firrtl.instance k @Leaf() scope %0
+    firrtl.instance d @D() scope %0
+  }
+  // DBG-NOT: @D
+  firrtl.module private @D() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    firrtl.instance leaf @Leaf()
+  }
+  firrtl.module private @Leaf() {}
+}
+
 // -----
 
 // Test proper hierarchical inlining of RefType

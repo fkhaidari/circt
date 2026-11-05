@@ -1646,12 +1646,11 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
 
 bool Inliner::renameInstance(StringRef prefix, InliningLevel &il,
                              Operation *oldInst, Operation *newInst) {
-  // TODO: No way yet to annotate an explicit parent scope on instances.
-  // Just emit a note in debug runs until this is resolved.
-  LLVM_DEBUG({
-    if (il.debugScope)
-      llvm::dbgs() << "Discarding parent debug scope for " << *oldInst << "\n";
-  });
+  // Like debug ops, an instance without a scope used the inlined module's.
+  // Instance choices have no scope operand and stay in the enclosing module.
+  if (auto inst = dyn_cast<InstanceOp>(newInst))
+    if (!inst.getScope() && il.debugScope)
+      inst.getScopeMutable().assign(il.debugScope);
 
   auto oldInstSym = getInnerSymName(oldInst);
   auto symbolChanged = rename(prefix, newInst, il);
@@ -2006,7 +2005,12 @@ LogicalResult Inliner::processInto(StringRef prefix, InliningLevel &il,
 
     InliningLevel childIL(il.mic, childModule);
     setActiveNLAsForChild(il.activeNLAs, childIL, instance);
-    createDebugScope(childIL, instance, il.debugScope);
+    // An instance moved here by an earlier inliner run keeps its scope.
+    Value parentScope = il.debugScope;
+    if (auto scope = instance.getScope())
+      if (auto clonedScope = mapper.lookupOrNull(scope))
+        parentScope = clonedScope;
+    createDebugScope(childIL, instance, parentScope);
 
     // Create the wire mapping for results + ports.
     auto nestedPrefix = (prefix + instance.getName() + "_").str();
@@ -2059,7 +2063,7 @@ LogicalResult Inliner::processInstances(FModuleOp module, bool flatten) {
     InliningLevel childIL(mic, target);
     setActiveNLAsForChild(/* Activate all through this instance */ std::nullopt,
                           childIL, instance);
-    createDebugScope(childIL, instance);
+    createDebugScope(childIL, instance, instance.getScope());
 
     auto nestedPrefix = (instance.getName() + "_").str();
     mapPortsToWires(nestedPrefix, childIL, mapper);

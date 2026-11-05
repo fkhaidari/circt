@@ -4145,6 +4145,10 @@ LogicalResult FIRRTLLowering::visitDecl(InstanceOp oldInstance) {
   if (oldInstance.getLowerToBind() || oldInstance.getDoNotPrint())
     newInstance.setDoNotPrintAttr(builder.getUnitAttr());
 
+  // The `dbg.scope` op is not a FIRRTL op and moves into the new module as is.
+  if (auto scope = oldInstance.getScope())
+    newInstance.getScopeMutable().assign(scope);
+
   if (newInstance.getInnerSymAttr())
     if (auto forceName = circuitState.instanceForceNames.lookup(
             {newInstance->getParentOfType<hw::HWModuleOp>().getNameAttr(),

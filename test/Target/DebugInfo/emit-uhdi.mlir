@@ -197,14 +197,16 @@ hw.module @Top(in %in: i8) {
 
 // -----
 
-// An instance has no scope operand. An instance that an inlined module held
-// stays in the module it was inlined into (a v1 gap).
+// An instance with a `scope` operand belongs to that scope. Without one it
+// belongs to its module.
 
 // CHECK:      "original":{"Leaf":{"name":"Leaf","vars":{}},
-// CHECK-SAME: "Top":{"name":"Top","vars":{"mid":{"type":0},"leaf":{"type":1}}},
-// CHECK-SAME: "Mid":{"name":"Mid","vars":{}}}
+// CHECK-SAME: "Top":{"name":"Top","vars":{"mid":{"type":1},"top":{"type":0}}},
+// CHECK-SAME: "Mid":{"name":"Mid","vars":{"leaf":{"type":0}}}}
 // CHECK-SAME: {"original":"Top","generated":"Top","vars":{
-// CHECK-SAME: "mid":{"$inline":["mid"]},"leaf":{"$inst":"mid_leaf","module":"Leaf"}}}
+// CHECK-SAME: "mid":{"$inline":["mid"]},"top":{"$inst":"top","module":"Leaf"}}}
+// CHECK-SAME: {"original":"Mid","generated":"Top","inline_path":["mid"],"vars":{
+// CHECK-SAME: "leaf":{"$inst":"mid_leaf","module":"Leaf"}}}
 hw.module private @Leaf() {
   dbg.moduleinfo "Leaf" loc(unknown)
 } loc(unknown)
@@ -212,7 +214,8 @@ hw.module @Top() {
   dbg.moduleinfo "Top" loc(unknown)
   %mid = dbg.scope "mid", "Mid" loc(unknown)
   dbg.moduleinfo "Mid" scope %mid loc(unknown)
-  hw.instance "leaf" @Leaf() -> () {hw.verilogName = "mid_leaf"} loc(unknown)
+  hw.instance "leaf" @Leaf() -> () scope %mid {hw.verilogName = "mid_leaf"} loc(unknown)
+  hw.instance "top" @Leaf() -> () {hw.verilogName = "top"} loc(unknown)
 } loc(unknown)
 
 // -----

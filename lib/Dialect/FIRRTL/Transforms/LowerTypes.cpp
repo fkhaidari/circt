@@ -1679,7 +1679,7 @@ bool TypeLoweringVisitor::visitDecl(InstanceOp op) {
         op.getNameKindAttr(), direction::packAttribute(context, newDirs),
         newNames, newDomains, op.getAnnotations(), newPortAnno,
         op.getLayersAttr(), op.getLowerToBindAttr(), op.getDoNotPrintAttr(),
-        sym);
+        sym, op.getScope());
   };
 
   return lowerInstanceLike(op, mode, op.getPortAnnotations(),
