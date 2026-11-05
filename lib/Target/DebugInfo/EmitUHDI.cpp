@@ -598,7 +598,7 @@ const Hop *Emitter::addHop(Operation *module, const Hop *parent,
 /// inlined scopes in it.
 void Emitter::buildScopes() {
   for (auto &op : *top.getBody()) {
-    if (!isa<hw::HWModuleOp, hw::HWModuleExternOp>(op))
+    if (!isa<hw::HWModuleOp, hw::HWModuleExternOp, sv::SVVerbatimModuleOp>(op))
       continue;
     auto module = cast<hw::HWModuleLike>(op);
     auto it = moduleOps.find(&op);
@@ -687,11 +687,11 @@ void Emitter::absorb(Scope &scope) {
 /// left out with a warning. Instances get theirs in `addKeys`.
 void Emitter::addVars() {
   for (auto &scope : scopes) {
-    if (auto ext = dyn_cast<hw::HWModuleExternOp>(scope.module)) {
-      for (auto port : ext.getPortList()) {
+    if (isa<hw::HWModuleExternOp, sv::SVVerbatimModuleOp>(scope.module)) {
+      for (auto port : cast<hw::HWModuleLike>(scope.module).getPortList()) {
         auto type = types.get(port.type);
         if (!type) {
-          ext.emitWarning("UHDI leaves out port '")
+          scope.module->emitWarning("UHDI leaves out port '")
               << port.getName() << "': its type cannot be described";
           continue;
         }
@@ -720,6 +720,18 @@ void Emitter::addVars() {
   }
 }
 
+/// The source class of a scope: the name in its `dbg.moduleinfo`, or the
+/// `sourceName` of an external module. Empty if it has none.
+static StringRef getClassName(Scope &scope) {
+  if (scope.info)
+    return scope.info.getTypeName();
+  if (auto ext = dyn_cast<hw::HWModuleExternOp>(scope.module))
+    return ext.getSourceName().value_or("");
+  if (auto ext = dyn_cast<sv::SVVerbatimModuleOp>(scope.module))
+    return ext.getSourceName().value_or("");
+  return {};
+}
+
 /// Add the instances to the vars of `scope`, key each entry, and pick the key
 /// of `scope` in `original`. The scopes it instantiates have their keys.
 void Emitter::addKeys(Scope &scope) {
@@ -728,12 +740,11 @@ void Emitter::addKeys(Scope &scope) {
     if (!child)
       continue;
     json::Object type{{"kind", "module"}, {"module", child->key}};
-    if (child->info) {
-      if (!child->info.getTypeName().empty())
-        type["name"] = child->info.getTypeName();
+    if (auto name = getClassName(*child); !name.empty())
+      type["name"] = name;
+    if (child->info)
       for (auto &entry : getExt(child->info.getParamsAttr()))
         type[entry.first] = std::move(entry.second);
-    }
     StringRef name = isa<debug::ScopeOp>(item.op)
                          ? child->scope.getInstanceName()
                          : cast<hw::InstanceOp>(item.op).getInstanceName();
@@ -909,12 +920,11 @@ void Emitter::emitOriginal(json::OStream &out, Scope &scope) {
     files.emitLoc(out, loc, /*emitted=*/false);
 
     // The top module has no instance whose type names its class.
-    if (scope.info) {
-      if (!scope.info.getTypeName().empty())
-        out.attribute("name", scope.info.getTypeName());
+    if (auto name = getClassName(scope); !name.empty())
+      out.attribute("name", name);
+    if (scope.info)
       for (auto &entry : getExt(scope.info.getParamsAttr()))
         out.attribute(entry.first, std::move(entry.second));
-    }
 
     out.attributeObject("vars", [&] {
       for (auto &var : scope.vars)
@@ -1014,7 +1024,8 @@ void Emitter::emitGenerated(json::OStream &out) {
   llvm::StringSet<> seen;
   out.attributeObject("generated", [&] {
     for (auto &op : *top.getBody()) {
-      if (!isa<hw::HWModuleOp, hw::HWModuleExternOp>(op))
+      if (!isa<hw::HWModuleOp, hw::HWModuleExternOp, sv::SVVerbatimModuleOp>(
+              op))
         continue;
       auto name = hw::getVerilogModuleName(&op);
       if (!seen.insert(name).second)
@@ -1022,7 +1033,7 @@ void Emitter::emitGenerated(json::OStream &out) {
 
       out.attributeObject(name, [&] {
         files.emitLoc(out, op.getLoc(), /*emitted=*/true);
-        if (isa<hw::HWModuleExternOp>(op))
+        if (isa<hw::HWModuleExternOp, sv::SVVerbatimModuleOp>(op))
           out.attribute("kind", "extern");
         if (auto module = dyn_cast<hw::HWModuleOp>(op))
           emitSignals(out, module);

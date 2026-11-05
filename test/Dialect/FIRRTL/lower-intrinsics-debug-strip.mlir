@@ -1,4 +1,5 @@
-// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl.module(firrtl-lower-intrinsics), firrtl.class(firrtl-lower-intrinsics)))' --verify-diagnostics %s | FileCheck %s --implicit-check-not=firrtl.int.generic --implicit-check-not=dbg. --implicit-check-not=firrtl.node
+// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl.module(firrtl-lower-intrinsics), firrtl.class(firrtl-lower-intrinsics), firrtl.extmodule(firrtl-lower-intrinsics)))' --verify-diagnostics %s | FileCheck %s --implicit-check-not=firrtl.int.generic --implicit-check-not=dbg. --implicit-check-not=firrtl.node --implicit-check-not=sourceName
+// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl.extmodule(firrtl-lower-intrinsics{emit-debug-info=true})))' %s | FileCheck %s --check-prefix=KEEP
 
 // Without emit-debug-info, every circt_debug_* intrinsic and its alias nodes
 // are erased, old protocol and class bodies included, with no diagnostics.
@@ -30,4 +31,9 @@ firrtl.circuit "Strip" {
   firrtl.class @C(in %s: !firrtl.string) {
     firrtl.int.generic "circt_debug_moduleinfo" <typeName: none = "C"> : () -> ()
   }
+  // The source class name of an extmodule is dropped too, and kept with
+  // emit-debug-info.
+  // CHECK: firrtl.extmodule @Ext()
+  // KEEP: firrtl.extmodule @Ext() attributes {sourceName = "my.pkg.BB"}
+  firrtl.extmodule @Ext() attributes {sourceName = "my.pkg.BB"}
 }

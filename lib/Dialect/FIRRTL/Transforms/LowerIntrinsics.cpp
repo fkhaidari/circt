@@ -239,6 +239,13 @@ LogicalResult DebugIntrinsicConverter::run() {
     op->erase();
     changed = true;
   }
+
+  // Without debug info, an extmodule keeps no source class name.
+  if (auto ext = dyn_cast<FExtModuleOp>(*module);
+      ext && !emit && ext.getSourceNameAttr()) {
+    ext.removeSourceNameAttr();
+    changed = true;
+  }
   return success();
 }
 

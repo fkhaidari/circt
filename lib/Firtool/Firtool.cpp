@@ -49,6 +49,10 @@ LogicalResult firtool::populatePreprocessTransforms(mlir::PassManager &pm,
   pm.nest<firrtl::CircuitOp>().nest<firrtl::ClassOp>().addPass(
       firrtl::createLowerIntrinsics(
           {/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
+  // Without -g, the source class names of extmodules are dropped before Dedup.
+  if (!opt.shouldEnableDebugInfo())
+    pm.nest<firrtl::CircuitOp>().nest<firrtl::FExtModuleOp>().addPass(
+        firrtl::createLowerIntrinsics({/*emitDebugInfo=*/false}));
 
   if (opt.shouldEnableDebugInfo())
     pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(

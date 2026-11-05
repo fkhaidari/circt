@@ -521,3 +521,126 @@ firrtl.circuit "Top" attributes {
   // expected-error @below {{circt.OutputDirAnnotation target already has an output file}}
   firrtl.module @Top() {}
 }
+
+// -----
+// A DebugSourceNameAnnotation must target an extmodule.
+
+// expected-error @below {{Unable to apply annotation: {class = "circt.DebugSourceNameAnnotation", name = "Foo", target = "~Top|Top"}}}
+firrtl.circuit "Top" attributes {
+  rawAnnotations = [
+    {
+      class = "circt.DebugSourceNameAnnotation",
+      name = "Foo",
+      target = "~Top|Top"
+    }
+  ]
+} {
+  // expected-error @below {{circt.DebugSourceNameAnnotation must target an extmodule}}
+  firrtl.module @Top() {}
+}
+
+// -----
+// A DebugSourceNameAnnotation must have a non-empty name.
+
+// expected-error @below {{Unable to apply annotation: {class = "circt.DebugSourceNameAnnotation", name = "", target = "~Top|Ext"}}}
+firrtl.circuit "Top" attributes {
+  rawAnnotations = [
+    {
+      class = "circt.DebugSourceNameAnnotation",
+      name = "",
+      target = "~Top|Ext"
+    }
+  ]
+} {
+  // expected-error @below {{circt.DebugSourceNameAnnotation name must not be empty}}
+  firrtl.extmodule @Ext()
+  firrtl.module @Top() {
+    firrtl.instance ext @Ext()
+  }
+}
+
+// -----
+// A DebugSourceNameAnnotation must be local.
+
+// expected-error @below {{Unable to apply annotation: {class = "circt.DebugSourceNameAnnotation", name = "Foo", target = "~Top|Top/ext:Ext"}}}
+firrtl.circuit "Top" attributes {
+  rawAnnotations = [
+    {
+      class = "circt.DebugSourceNameAnnotation",
+      name = "Foo",
+      target = "~Top|Top/ext:Ext"
+    }
+  ]
+} {
+  // expected-error @below {{circt.DebugSourceNameAnnotation must be local}}
+  firrtl.extmodule @Ext()
+  firrtl.module @Top() {
+    firrtl.instance ext @Ext()
+  }
+}
+
+// -----
+// A DebugSourceNameAnnotation name must be a string.
+
+// expected-error @below {{Unable to apply annotation: {class = "circt.DebugSourceNameAnnotation", name = 1 : i64, target = "~Top|Ext"}}}
+firrtl.circuit "Top" attributes {
+  rawAnnotations = [
+    {
+      class = "circt.DebugSourceNameAnnotation",
+      name = 1 : i64,
+      target = "~Top|Ext"
+    }
+  ]
+} {
+  // expected-error @below {{did not contain the correct type for key 'name'}}
+  // expected-note @below {{The full Annotation is reproduced here}}
+  firrtl.extmodule @Ext()
+  firrtl.module @Top() {
+    firrtl.instance ext @Ext()
+  }
+}
+
+// -----
+// A DebugSourceNameAnnotation must not target a port.
+
+// expected-error @below {{Unable to apply annotation: {class = "circt.DebugSourceNameAnnotation", name = "Foo", target = "~Top|Ext>in"}}}
+firrtl.circuit "Top" attributes {
+  rawAnnotations = [
+    {
+      class = "circt.DebugSourceNameAnnotation",
+      name = "Foo",
+      target = "~Top|Ext>in"
+    }
+  ]
+} {
+  // expected-error @below {{circt.DebugSourceNameAnnotation must target an extmodule}}
+  firrtl.extmodule @Ext(in in: !firrtl.uint<1>)
+  firrtl.module @Top() {
+    %i = firrtl.instance ext @Ext(in in: !firrtl.uint<1>)
+  }
+}
+
+// -----
+// Two different DebugSourceNameAnnotations on one extmodule conflict.
+
+// expected-error @below {{Unable to apply annotation: {class = "circt.DebugSourceNameAnnotation", name = "B", target = "~Top|Ext"}}}
+firrtl.circuit "Top" attributes {
+  rawAnnotations = [
+    {
+      class = "circt.DebugSourceNameAnnotation",
+      name = "A",
+      target = "~Top|Ext"
+    },
+    {
+      class = "circt.DebugSourceNameAnnotation",
+      name = "B",
+      target = "~Top|Ext"
+    }
+  ]
+} {
+  // expected-error @below {{circt.DebugSourceNameAnnotation extmodule already has a source name}}
+  firrtl.extmodule @Ext()
+  firrtl.module @Top() {
+    firrtl.instance ext @Ext()
+  }
+}
