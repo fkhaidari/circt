@@ -179,7 +179,7 @@ void InferClockPortsPass::markClocks(SmallVectorImpl<Value> &worklist) {
       ++numInputPortsPromoted;
       for (auto *use : instanceGraph->lookup(module)->uses())
         if (auto instance = use->getInstance<hw::InstanceOp>())
-          worklist.push_back(instance.getOperand(input));
+          worklist.push_back(instance.getInputs()[input]);
       continue;
     }
 
@@ -254,7 +254,8 @@ void InferClockPortsPass::rewriteModule(hw::HWModuleOp module) {
     builder.setInsertionPoint(instance);
     BitVector targetInputs = clockInputs.lookup(target);
     for (unsigned input : targetInputs.set_bits())
-      instance.setOperand(input, toClock(instance.getOperand(input), builder));
+      instance.getInputsMutable()[input].set(
+          toClock(instance.getInputs()[input], builder));
   }
 
   // Pre-existing `seq.to_clock` users of retyped values are now redundant.

@@ -573,7 +573,7 @@ bool hw::isAnyModuleOrInstance(Operation *moduleOrInstance) {
 FunctionType hw::getModuleType(Operation *moduleOrInstance) {
   return TypeSwitch<Operation *, FunctionType>(moduleOrInstance)
       .Case<InstanceOp>([](auto instance) {
-        SmallVector<Type> inputs(instance->getOperandTypes());
+        SmallVector<Type> inputs(instance.getInputs().getTypes());
         SmallVector<Type> results(instance->getResultTypes());
         return FunctionType::get(instance->getContext(), inputs, results);
       })
