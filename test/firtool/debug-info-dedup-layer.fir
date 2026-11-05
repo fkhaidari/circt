@@ -2,6 +2,8 @@
 ; RUN: firtool %s -o %t.sv
 ; RUN: grep -v circt_debug_ %s | firtool --format=fir -o %t.nodebug.sv
 ; RUN: diff %t.sv %t.nodebug.sv
+; RUN: firtool -g %s --emit-uhdi=%t.uhdi.json -o %t.g.sv
+; RUN: FileCheck %s --check-prefix=UHDI --implicit-check-not=Child_2 < %t.uhdi.json
 
 ; Trimmed Chisel output. Child, Child_1 and Child_2 have the same body. Under
 ; -g Child and Child_2 have the same class parameters and merge; Child_1 has a
@@ -35,6 +37,18 @@
 ; CHECK:       dbg.variable "mixed", {{%.+}} scope [[INL]] kind node
 ; CHECK:       dbg.moduleinfo "Top"{{$}}
 ; CHECK:       hw.instance "verification" sym @verification @Top_Verification() -> () {doNotPrint}
+
+; UHDI-LABEL: "bindings": [
+; UHDI:           "c0": {
+; UHDI-NEXT:        "$inst": "c0",
+; UHDI-NEXT:        "module": "Child"
+; UHDI:           "c1": {
+; UHDI-NEXT:        "$inst": "c1",
+; UHDI-NEXT:        "module": "Child_1"
+; UHDI:           "c2": {
+; UHDI-NEXT:        "$inst": "c2",
+; UHDI-NEXT:        "module": "Child"
+; UHDI:           "a": "c2_out_layerCapture",
 
 FIRRTL version 7.0.0
 circuit Top :%[[

@@ -2,6 +2,8 @@
 ; RUN: firtool %s -o %t.sv
 ; RUN: grep -v circt_debug_ %s | firtool --format=fir -o %t.nodebug.sv
 ; RUN: diff %t.sv %t.nodebug.sv
+; RUN: firtool -g %s --emit-uhdi=%t.uhdi.json -o %t.g.sv
+; RUN: FileCheck %s --check-prefix=UHDI < %t.uhdi.json
 
 ; Chisel output. The `io` bundle holds a probe, so its leaves are
 ; `opensubfield`s until LowerOpenAggs. `next` is declared under a `when`.
@@ -32,6 +34,17 @@
 ; CHECK:      dbg.variable "result", {{%.+}} kind wire
 ; CHECK:      [[SEL:%.+]] = dbg.enum {{%.+}}, "DebugE2eAluOp"
 ; CHECK-NEXT: dbg.variable "selOp", [[SEL]] kind node : !dbg.enum
+
+; UHDI-LABEL: "bindings": [
+; UHDI:             "lanes": [
+; UHDI-NEXT:          {
+; UHDI-NEXT:            "data": "io_lanes_0_data",
+; UHDI-NEXT:            "valid": {
+; UHDI-NEXT:              "$const": "0b1"
+; UHDI:                 "data": "acc",
+; UHDI-NEXT:            "valid": "io_lanes_1_valid"
+; UHDI:             "op": "io_op",
+; UHDI:               "ready": "io_result_ready",
 
 FIRRTL version 7.0.0
 circuit Alu :%[[
