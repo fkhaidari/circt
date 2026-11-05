@@ -411,7 +411,7 @@ class HWInstanceOpBase<string mnemonic, list<Trait> traits = []> :
       return getNumInputPorts() + getNumOutputPorts();
     }
 
-    size_t $cppClass::getNumInputPorts() { return getNumOperands(); }
+    size_t $cppClass::getNumInputPorts() { return getInputs().size(); }
 
     size_t $cppClass::getNumOutputPorts() { return getNumResults(); }
 

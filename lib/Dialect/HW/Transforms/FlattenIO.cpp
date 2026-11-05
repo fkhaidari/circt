@@ -127,7 +127,7 @@ struct InstanceOpConversion : public OpConversionPattern<hw::InstanceOp> {
     auto loc = op.getLoc();
     // Flatten the operands.
     llvm::SmallVector<Value> convOperands;
-    for (auto operand : flattenValues(adaptor.getOperands())) {
+    for (auto operand : flattenValues(adaptor.getInputs())) {
       if (auto structType = getStructType(operand.getType())) {
         auto explodedStruct = hw::StructExplodeOp::create(
             rewriter, loc, getInnerTypes(structType), operand);
@@ -450,7 +450,7 @@ static LogicalResult flattenOpsOfType(ModuleOp module, bool recursive,
     target.addDynamicallyLegalOp<hw::InstanceOp>([&](hw::InstanceOp op) {
       auto refName = op.getReferencedModuleName();
       return externModules.contains(refName) ||
-             (llvm::none_of(op->getOperands(),
+             (llvm::none_of(op.getInputs(),
                             [](auto operand) {
                               return isStructType(operand.getType());
                             }) &&

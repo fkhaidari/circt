@@ -1199,8 +1199,8 @@ LogicalResult LocalVisitor::initializeAndRun(hw::InstanceOp instance) {
       // Prepend the instance path.
       assert(instancePathCache);
       auto newPath = instancePathCache->prependInstance(instance, instancePath);
-      auto computedResults =
-          getOrComputePaths(instance.getOperand(arg.getArgNumber()), argBitPos);
+      auto computedResults = getOrComputePaths(
+          instance.getInputs()[arg.getArgNumber()], argBitPos);
       if (failed(computedResults))
         return failure();
 

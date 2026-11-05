@@ -108,7 +108,7 @@ void InferMemoriesPass::runOnOperation() {
 
     ImplicitLocOpBuilder builder(instOp.getLoc(), instOp);
     auto wordType = builder.getIntegerType(width);
-    auto addressTy = dyn_cast<IntegerType>(instOp.getOperand(0).getType());
+    auto addressTy = dyn_cast<IntegerType>(instOp.getInputs()[0].getType());
     if (!addressTy) {
       instOp.emitError("expected integer type for memory addressing, got ")
           << addressTy;
@@ -148,9 +148,9 @@ void InferMemoriesPass::runOnOperation() {
     auto numReadPorts =
         params.getAs<IntegerAttr>("numReadPorts").getValue().getZExtValue();
     for (unsigned portIdx = 0; portIdx != numReadPorts; ++portIdx) {
-      auto address = instOp.getOperand(argIdx++);
-      auto enable = instOp.getOperand(argIdx++);
-      auto clock = instOp.getOperand(argIdx++);
+      auto address = instOp.getInputs()[argIdx++];
+      auto enable = instOp.getInputs()[argIdx++];
+      auto clock = instOp.getInputs()[argIdx++];
       auto data = instOp.getResult(resultIdx++);
 
       if (address.getType() != addressTy) {
@@ -190,12 +190,12 @@ void InferMemoriesPass::runOnOperation() {
                                  .getValue()
                                  .getZExtValue();
     for (unsigned portIdx = 0; portIdx != numReadWritePorts; ++portIdx) {
-      auto address = instOp.getOperand(argIdx++);
-      auto enable = instOp.getOperand(argIdx++);
-      auto clock = instOp.getOperand(argIdx++);
-      auto writeMode = instOp.getOperand(argIdx++);
-      auto writeData = instOp.getOperand(argIdx++);
-      auto writeMask = maskBits > 1 ? instOp.getOperand(argIdx++) : Value{};
+      auto address = instOp.getInputs()[argIdx++];
+      auto enable = instOp.getInputs()[argIdx++];
+      auto clock = instOp.getInputs()[argIdx++];
+      auto writeMode = instOp.getInputs()[argIdx++];
+      auto writeData = instOp.getInputs()[argIdx++];
+      auto writeMask = maskBits > 1 ? instOp.getInputs()[argIdx++] : Value{};
       auto readData = instOp.getResult(resultIdx++);
 
       if (address.getType() != addressTy) {
@@ -261,11 +261,11 @@ void InferMemoriesPass::runOnOperation() {
     auto numWritePorts =
         params.getAs<IntegerAttr>("numWritePorts").getValue().getZExtValue();
     for (unsigned portIdx = 0; portIdx != numWritePorts; ++portIdx) {
-      auto address = instOp.getOperand(argIdx++);
-      auto enable = instOp.getOperand(argIdx++);
-      auto clock = instOp.getOperand(argIdx++);
-      auto data = instOp.getOperand(argIdx++);
-      auto mask = maskBits > 1 ? instOp.getOperand(argIdx++) : Value{};
+      auto address = instOp.getInputs()[argIdx++];
+      auto enable = instOp.getInputs()[argIdx++];
+      auto clock = instOp.getInputs()[argIdx++];
+      auto data = instOp.getInputs()[argIdx++];
+      auto mask = maskBits > 1 ? instOp.getInputs()[argIdx++] : Value{};
 
       if (address.getType() != addressTy) {
         instOp.emitOpError("expected ")

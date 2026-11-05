@@ -323,9 +323,9 @@ void FlattenModulesPass::runOnOperation() {
                                  &pathsTable, instanceRef);
 
         if (failed(mlir::inlineRegion(inliner, config.getCloneCallback(),
-                                      &module.getBody(), inst,
-                                      inst.getOperands(), inst.getResults(),
-                                      std::nullopt, !isLastModuleUse))) {
+                                      &module.getBody(), inst, inst.getInputs(),
+                                      inst.getResults(), std::nullopt,
+                                      !isLastModuleUse))) {
           inst.emitError("failed to inline '")
               << module.getModuleName() << "' into instance '"
               << inst.getInstanceName() << "'";
