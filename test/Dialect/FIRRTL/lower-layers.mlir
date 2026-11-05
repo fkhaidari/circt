@@ -1197,3 +1197,29 @@ firrtl.circuit "DoNotIncludeDummyBindfiles" {
   // CHECK: sv.include local "layers-Child2-A.sv"
   // CHECK-NOT: sv.include local "layers-Child1-A.sv"
 }
+
+// -----
+
+// Check the cloning of debug scopes defined outside the layer block.
+// CHECK-LABEL: firrtl.circuit "DebugScope"
+firrtl.circuit "DebugScope" {
+  firrtl.layer @A bind {}
+
+  // CHECK:      firrtl.module private @DebugScope_A() {
+  // CHECK-NEXT:   [[C:%.+]] = dbg.scope "c", "C"{{$}}
+  // CHECK-NEXT:   [[E:%.+]] = dbg.scope "e", "E" scope [[C]]
+  // CHECK-NEXT:   [[A:%.+]] = firrtl.xmr.deref
+  // CHECK-NEXT:   dbg.variable "v", [[A]] scope [[E]] : !firrtl.uint<1>
+  // CHECK-NEXT:   [[D:%.+]] = dbg.scope "d", "D" scope [[C]]
+  // CHECK-NEXT:   dbg.variable "w", [[A]] scope [[D]] : !firrtl.uint<1>
+  // CHECK-NEXT: }
+  firrtl.module @DebugScope(in %a: !firrtl.uint<1>) {
+    %0 = dbg.scope "c", "C"
+    %1 = dbg.scope "e", "E" scope %0
+    firrtl.layerblock @A {
+      dbg.variable "v", %a scope %1 : !firrtl.uint<1>
+      %2 = dbg.scope "d", "D" scope %0
+      dbg.variable "w", %a scope %2 : !firrtl.uint<1>
+    }
+  }
+}
