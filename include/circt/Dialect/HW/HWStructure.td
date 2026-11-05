@@ -13,6 +13,7 @@
 #ifndef CIRCT_DIALECT_HW_HWSTRUCTURE_TD
 #define CIRCT_DIALECT_HW_HWSTRUCTURE_TD
 
+include "circt/Dialect/Debug/DebugScopeType.td"
 include "circt/Dialect/HW/HWAttributes.td"
 include "circt/Dialect/HW/HWDialect.td"
 include "circt/Dialect/HW/HWOpInterfaces.td"
@@ -447,7 +448,8 @@ class HWInstanceOpBase<string mnemonic, list<Trait> traits = []> :
   }];
 }
 
-def InstanceOp : HWInstanceOpBase<"instance", [HWInstanceLike]> {
+def InstanceOp : HWInstanceOpBase<"instance", [HWInstanceLike,
+                                                AttrSizedOperandSegments]> {
   let summary = "Create an instance of a module";
   let description = [{
     This represents an instance of a module. The inputs and outputs are
@@ -456,11 +458,16 @@ def InstanceOp : HWInstanceOpBase<"instance", [HWInstanceLike]> {
 
     Any parameters in the "old" format (slated to be removed) are stored in the
     `oldParameters` dictionary.
+
+    The optional `scope` operand places the instance in a `dbg.scope` for
+    debug info, e.g. an instance that came from an inlined module. It is not
+    a port and does not change the emitted Verilog.
   }];
 
   let arguments = (ins StrAttr:$instanceName,
                        FlatSymbolRefAttr:$moduleName,
                        Variadic<AnyType>:$inputs,
+                       Optional<DebugScopeType>:$scope,
                        StrArrayAttr:$argNames, StrArrayAttr:$resultNames,
                        ParamDeclArrayAttr:$parameters,
                        OptionalAttr<InnerSymAttr>:$inner_sym,
@@ -468,6 +475,31 @@ def InstanceOp : HWInstanceOpBase<"instance", [HWInstanceLike]> {
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
+    /// Create an instance without a debug scope.
+    OpBuilder<(ins "::mlir::TypeRange":$results,
+                   "::mlir::StringAttr":$instanceName,
+                   "::mlir::FlatSymbolRefAttr":$moduleName,
+                   "::mlir::ValueRange":$inputs, "::mlir::ArrayAttr":$argNames,
+                   "::mlir::ArrayAttr":$resultNames,
+                   "::mlir::ArrayAttr":$parameters,
+                   "InnerSymAttr":$innerSym,
+                   CArg<"::mlir::UnitAttr", "{}">:$doNotPrint), [{
+      build($_builder, $_state, results, instanceName, moduleName, inputs,
+            /*scope=*/::mlir::Value(), argNames, resultNames, parameters,
+            innerSym, doNotPrint);
+    }]>,
+    OpBuilder<(ins "::mlir::TypeRange":$results,
+                   "::llvm::StringRef":$instanceName,
+                   "::llvm::StringRef":$moduleName,
+                   "::mlir::ValueRange":$inputs, "::mlir::ArrayAttr":$argNames,
+                   "::mlir::ArrayAttr":$resultNames,
+                   "::mlir::ArrayAttr":$parameters,
+                   "InnerSymAttr":$innerSym,
+                   CArg<"bool", "false">:$doNotPrint), [{
+      build($_builder, $_state, results, instanceName, moduleName, inputs,
+            /*scope=*/::mlir::Value(), argNames, resultNames, parameters,
+            innerSym, doNotPrint);
+    }]>,
     /// Create a instance that refers to a known module.
     OpBuilder<(ins "Operation*":$module, "StringAttr":$name,
                    "ArrayRef<Value>":$inputs,

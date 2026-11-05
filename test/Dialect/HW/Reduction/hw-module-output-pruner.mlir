@@ -17,3 +17,14 @@ hw.module @Bar(in %arg0 : i32, in %arg1 : i32, in %arg2 : i32) {
   // CHECK-NEXT: dbg.variable "x", [[TMP]]
   dbg.variable "x", %1 : i32
 }
+
+// The rebuilt instance keeps its debug scope.
+// CHECK-LABEL: hw.module @Baz
+hw.module @Baz(in %arg0 : i32) {
+  // CHECK-NEXT: [[S:%.+]] = dbg.scope "s", "S"
+  %s = dbg.scope "s", "S"
+  // CHECK-NEXT: [[TMP:%.+]] = hw.instance "foo" @Foo(arg0: %arg0: i32, arg1: %arg0: i32, arg2: %arg0: i32) -> (out1: i32) scope [[S]]
+  %0, %1, %2 = hw.instance "foo" @Foo(arg0: %arg0: i32, arg1: %arg0: i32, arg2: %arg0: i32) -> (out0 : i32, out1 : i32, out2 : i32) scope %s
+  // CHECK-NEXT: dbg.variable "y", [[TMP]]
+  dbg.variable "y", %1 : i32
+}

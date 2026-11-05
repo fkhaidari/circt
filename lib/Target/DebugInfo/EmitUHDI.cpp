@@ -12,7 +12,8 @@
 // module that nothing instantiates. Any other module was made by the compiler
 // and is transparent: its variables and instances move into the scope that
 // instantiates it, and their signals are named by a hierarchical path from
-// there. A `dbg.scope` with a `dbg.moduleinfo` is an inlined instance.
+// there. A `dbg.scope` with a `dbg.moduleinfo` is an inlined instance. An
+// `hw.instance` with a `scope` operand belongs to that scope.
 //
 // Signal names are the Verilog names that ExportVerilog leaves on the IR, so
 // this runs after ExportVerilog.
@@ -578,7 +579,7 @@ mlir::LogicalResult Emitter::collect() {
       } else if (auto scope = dyn_cast<debug::ScopeOp>(op)) {
         ops.members[getKey(scope.getScope())].push_back(op);
       } else if (auto inst = dyn_cast<hw::InstanceOp>(op)) {
-        ops.members[module].push_back(op);
+        ops.members[getKey(inst.getScope())].push_back(op);
         instantiated.insert(inst.getModuleNameAttr().getAttr());
       }
     });

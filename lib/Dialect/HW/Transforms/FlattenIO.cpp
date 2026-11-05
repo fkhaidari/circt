@@ -152,7 +152,7 @@ struct InstanceOpConversion : public OpConversionPattern<hw::InstanceOp> {
     // adjusted later.
     auto newInstance = hw::InstanceOp::create(
         rewriter, loc, newResultTypes, op.getInstanceNameAttr(),
-        FlatSymbolRefAttr::get(referencedMod), convOperands,
+        FlatSymbolRefAttr::get(referencedMod), convOperands, op.getScope(),
         op.getArgNamesAttr(), op.getResultNamesAttr(), op.getParametersAttr(),
         op.getInnerSymAttr(), op.getDoNotPrintAttr());
 

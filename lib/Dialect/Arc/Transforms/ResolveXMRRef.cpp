@@ -297,6 +297,8 @@ Value ResolveXMRRefPass::resolveViaBindContext(sv::XMRRefOp xmrRefOp,
 
       if (userInst.getDoNotPrint())
         newInst.setDoNotPrintAttr(UnitAttr::get(newInst.getContext()));
+      if (auto scope = userInst.getScope())
+        newInst.getScopeMutable().assign(scope);
 
       userInst.erase();
     }
@@ -534,6 +536,8 @@ Value ResolveXMRRefPass::boreRecursively(ArrayAttr pathArray, unsigned index,
 
     if (userInst.getDoNotPrint())
       newInst.setDoNotPrintAttr(UnitAttr::get(newInst.getContext()));
+    if (auto scope = userInst.getScope())
+      newInst.getScopeMutable().assign(scope);
 
     if (userInst == instOp)
       boredValue = newInst.getResult(resIdx);

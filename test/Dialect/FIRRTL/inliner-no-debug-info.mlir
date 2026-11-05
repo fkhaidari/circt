@@ -16,3 +16,18 @@ firrtl.circuit "NoScopes" {
     dbg.variable "a", %wire : !firrtl.uint<1>
   }
 }
+
+// Without debug info, the instances of an inlined module get no scope.
+
+// OFF-LABEL: firrtl.circuit "NoInstanceScopes"
+firrtl.circuit "NoInstanceScopes" {
+  // OFF: firrtl.module @NoInstanceScopes
+  // OFF-NEXT: firrtl.instance foo_leaf @Leaf(){{$}}
+  firrtl.module @NoInstanceScopes() {
+    firrtl.instance foo @Foo()
+  }
+  firrtl.module private @Foo() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    firrtl.instance leaf @Leaf()
+  }
+  firrtl.module private @Leaf() {}
+}

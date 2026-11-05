@@ -138,8 +138,8 @@ static InstanceOp cloneWithErasedPorts(InstanceOp &instance,
   auto newInstance = InstanceOp::create(
       builder, instance->getLoc(), newResultTypes,
       instance.getInstanceNameAttr(), instance.getModuleName(), newOperands,
-      newOpNamesArrayAttr, newResultNamesArrayAttr, instance.getParameters(),
-      instance.getInnerSymAttr());
+      instance.getScope(), newOpNamesArrayAttr, newResultNamesArrayAttr,
+      instance.getParameters(), instance.getInnerSymAttr());
 
   return newInstance;
 }
