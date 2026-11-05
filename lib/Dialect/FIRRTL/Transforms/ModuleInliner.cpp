@@ -1299,7 +1299,8 @@ public:
   /// Initialize the inliner to run on this circuit.
   Inliner(CircuitOp circuit, SymbolTable &symbolTable,
           CircuitNamespace &circuitNamespace,
-          const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner);
+          const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner,
+          bool emitDebugInfo);
 
   /// Run the inliner.
   LogicalResult run();
@@ -1572,6 +1573,9 @@ private:
   /// The debug scopes created for inlined instances.
   /// Scopes that are unused after inlining will be deleted again.
   SmallVector<debug::ScopeOp> debugScopes;
+
+  /// Whether to create debug scopes for inlined instances.
+  bool emitDebugInfo;
 };
 } // namespace
 
@@ -1579,10 +1583,11 @@ private:
 
 Inliner::Inliner(CircuitOp circuit, SymbolTable &symbolTable,
                  CircuitNamespace &circuitNamespace,
-                 const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner)
+                 const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner,
+                 bool emitDebugInfo)
     : circuit(circuit), context(circuit.getContext()), symbolTable(symbolTable),
       circuitNamespace(circuitNamespace), inliningFacts(inliningFacts),
-      nlaPlanner(nlaPlanner) {}
+      nlaPlanner(nlaPlanner), emitDebugInfo(emitDebugInfo) {}
 
 LogicalResult Inliner::run() {
   if (failed(inlineModules()))
@@ -1604,7 +1609,7 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
   // Debug operations with implicit module scope now need an explicit scope,
   // since inlining has destroyed the module whose scope they implicitly used.
   auto updateDebugScope = [&](auto op) {
-    if (!op.getScope())
+    if (!op.getScope() && il.debugScope)
       op.getScopeMutable().assign(il.debugScope);
   };
   if (auto varOp = dyn_cast<debug::VariableOp>(op))
@@ -2078,6 +2083,8 @@ LogicalResult Inliner::processInstances(FModuleOp module, bool flatten) {
 
 void Inliner::createDebugScope(InliningLevel &il, InstanceOp instance,
                                Value parentScope) {
+  if (!emitDebugInfo)
+    return;
   auto op = debug::ScopeOp::create(
       il.mic.b, instance.getLoc(), instance.getInstanceNameAttr(),
       instance.getModuleNameAttr().getAttr(), parentScope);
@@ -2478,7 +2485,8 @@ class InlinerPass : public circt::firrtl::impl::InlinerBase<InlinerPass> {
 
     // Run Inlining: Clone (P3), and writeback (P4).
     CircuitNamespace circuitNamespace(circuit);
-    Inliner inliner(circuit, symbolTable, circuitNamespace, *facts, nlaPlanner);
+    Inliner inliner(circuit, symbolTable, circuitNamespace, *facts, nlaPlanner,
+                    emitDebugInfo);
     if (failed(inliner.run()))
       signalPassFailure();
 

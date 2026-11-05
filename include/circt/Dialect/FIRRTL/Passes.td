@@ -182,6 +182,10 @@ def Inliner : Pass<"firrtl-inliner", "firrtl::CircuitOp"> {
     ```
   }];
   let dependentDialects = ["debug::DebugDialect"];
+  let options = [
+    Option<"emitDebugInfo", "emit-debug-info", "bool", "false",
+           "Create debug scopes for inlined instances">
+  ];
   let statistics = [
     Statistic<"numInstancesInlined", "num-instances-inlined",
       "Number of instances inlined into their parent">,
