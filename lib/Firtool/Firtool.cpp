@@ -155,7 +155,8 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
   if (opt.shouldConvertProbesToSignals())
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createProbesToSignals());
 
-  pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInliner());
+  pm.nest<firrtl::CircuitOp>().addPass(
+      firrtl::createInliner({/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
 
   pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
       firrtl::createLayerMerge());
@@ -223,7 +224,8 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
     if (opt.shouldInlineInputOnlyModules()) {
       pm.nest<firrtl::CircuitOp>().addPass(
           firrtl::createAnnotateInputOnlyModules());
-      pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInliner());
+      pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInliner(
+          {/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
       pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
           createSimpleCanonicalizerPass());
     }
