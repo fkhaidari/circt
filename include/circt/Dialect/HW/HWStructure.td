@@ -239,6 +239,9 @@ def HWModuleExternOp : HWModuleOpBase<"module.extern"> {
     module name in Verilog we can use.  TODO: This is a hack because we don't
     have proper parameterization in the hw.dialect.  We need a way to represent
     parameterized types instead of just concrete types.
+
+    The optional 'sourceName' attribute is the source-language class of the
+    module, for debug info.
   }];
   let arguments = (ins SymbolNameAttr:$sym_name,
                        OptionalAttr<StrAttr>:$sym_visibility,
@@ -246,7 +249,8 @@ def HWModuleExternOp : HWModuleOpBase<"module.extern"> {
                        OptionalAttr<DictArrayAttr>:$per_port_attrs,
                        OptionalAttr<LocationArrayAttr>:$port_locs,
                        ParamDeclArrayAttr:$parameters,
-                       OptionalAttr<StrAttr>:$verilogName);
+                       OptionalAttr<StrAttr>:$verilogName,
+                       OptionalAttr<StrAttr>:$sourceName);
   let results = (outs);
   let regions = (region AnyRegion:$body);
 

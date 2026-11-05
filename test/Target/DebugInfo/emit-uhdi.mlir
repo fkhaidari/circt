@@ -353,6 +353,19 @@ hw.module @Root(in %a: i8) {
 
 // -----
 
+// An external module with a `sourceName` has that class, like a module with
+// a `dbg.moduleinfo`: on its entry and on the type of each instance.
+
+// CHECK:      "types":[{"kind":"uint","width":8},{"kind":"module","module":"Ext","name":"my.pkg.BB"}]
+// CHECK-SAME: "original":{"Ext":{"name":"my.pkg.BB","vars":{"p":{"type":0,"dir":"in"}}},
+// CHECK-SAME: "Top":{"vars":{"e":{"type":1}}}}
+hw.module.extern @Ext(in %p: i8 loc(unknown)) attributes {sourceName = "my.pkg.BB"} loc(unknown)
+hw.module @Top(in %a: i8) {
+  hw.instance "e" @Ext(p: %a: i8) -> () loc(unknown)
+} loc(unknown)
+
+// -----
+
 // A value that CSE shares is walked once and shown at each use: an array used
 // as several elements of another, and a struct field that is also a field of
 // a sibling field.

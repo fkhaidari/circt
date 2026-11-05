@@ -878,6 +878,26 @@ firrtl.circuit "Test" attributes {
 
 // -----
 
+// DebugSourceNameAnnotation sets the source class name of an extmodule.
+// CHECK-LABEL: firrtl.circuit "SourceName"
+firrtl.circuit "SourceName" attributes {
+  rawAnnotations = [
+    {
+      class = "circt.DebugSourceNameAnnotation",
+      target = "~SourceName|Ext",
+      name = "my.pkg.BB"
+    }
+  ]
+} {
+  // CHECK: firrtl.extmodule @Ext() attributes {sourceName = "my.pkg.BB"}
+  firrtl.extmodule @Ext()
+  firrtl.module @SourceName() {
+    firrtl.instance ext @Ext()
+  }
+}
+
+// -----
+
 firrtl.circuit "Test" attributes {
   rawAnnotations =[
     {

@@ -677,7 +677,8 @@ def LowerIntrinsics : InterfacePass<"firrtl-lower-intrinsics",
 
     The `circt_debug_*` intrinsics are converted to Debug dialect ops when
     `emit-debug-info` is set, and erased otherwise. In a `firrtl.class` body
-    they are always erased.
+    they are always erased. Without `emit-debug-info`, the `sourceName` of a
+    `firrtl.extmodule` is dropped.
   }];
   let options = [
     Option<"emitDebugInfo", "emit-debug-info", "bool", "false",

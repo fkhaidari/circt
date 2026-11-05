@@ -9,6 +9,9 @@ firrtl.circuit "Basic" attributes {
   } {
 firrtl.extmodule @Basic()
 
+// CHECK: firrtl.extmodule @SourceName() attributes {sourceName = "my.pkg.BB"}
+firrtl.extmodule @SourceName() attributes {sourceName = "my.pkg.BB"}
+
 // CHECK: firrtl.module @Top(in %arg0: !firrtl.uint<1>) attributes {portNames = [""]}
 firrtl.module @Top(in %arg0: !firrtl.uint<1>) attributes {portNames = [""]} {}
 

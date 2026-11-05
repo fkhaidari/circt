@@ -1101,3 +1101,18 @@ firrtl.circuit "ModuleInfoDiffer" {
     firrtl.instance b @InfoB()
   }
 }
+
+// External modules whose source class names differ must not dedup.
+// CHECK-LABEL: firrtl.circuit "SourceNameDiffer"
+firrtl.circuit "SourceNameDiffer" {
+  // CHECK: firrtl.extmodule private @ExtA() attributes {defname = "BB", sourceName = "A"}
+  firrtl.extmodule private @ExtA() attributes {defname = "BB", sourceName = "A"}
+  // CHECK: firrtl.extmodule private @ExtB() attributes {defname = "BB", sourceName = "B"}
+  firrtl.extmodule private @ExtB() attributes {defname = "BB", sourceName = "B"}
+  firrtl.module @SourceNameDiffer() {
+    // CHECK: firrtl.instance a @ExtA
+    // CHECK-NEXT: firrtl.instance b @ExtB
+    firrtl.instance a @ExtA()
+    firrtl.instance b @ExtB()
+  }
+}
