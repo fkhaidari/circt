@@ -223,9 +223,9 @@ void PortConverterImpl::updateInstance(hw::InstanceOp inst) {
 
   // Map the operands.
   SmallVector<Value> newOperands(ports.sizeInputs(), {});
-  for (size_t oldOpIdx = 0, e = inst.getNumOperands(); oldOpIdx < e; ++oldOpIdx)
-    loweredInputs[oldOpIdx]->mapInputSignals(
-        b, inst, inst->getOperand(oldOpIdx), newOperands, newResults);
+  for (auto [oldOpIdx, input] : llvm::enumerate(inst.getInputs()))
+    loweredInputs[oldOpIdx]->mapInputSignals(b, inst, input, newOperands,
+                                             newResults);
 
   // Map the results.
   for (size_t oldResIdx = 0, e = inst.getNumResults(); oldResIdx < e;
@@ -243,6 +243,8 @@ void PortConverterImpl::updateInstance(hw::InstanceOp inst) {
   newInst->setDialectAttrs(inst->getDialectAttrs());
   if (auto doNotPrint = inst.getDoNotPrintAttr())
     newInst.setDoNotPrintAttr(doNotPrint);
+  if (auto scope = inst.getScope())
+    newInst.getScopeMutable().assign(scope);
 
   // Assign the backedges to the new results.
   for (auto [idx, be] : llvm::enumerate(newResults))

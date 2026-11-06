@@ -1,4 +1,5 @@
 // RUN: circt-opt --split-input-file --pass-pipeline='builtin.module(firrtl.circuit(firrtl-inliner))' -allow-unregistered-dialect --verify-diagnostics %s | FileCheck %s
+// RUN: circt-opt --split-input-file --pass-pipeline='builtin.module(firrtl.circuit(firrtl-inliner{emit-debug-info=true}))' -allow-unregistered-dialect --verify-diagnostics %s | FileCheck %s --check-prefix=DBG
 
 // Test that an external module as the main module works.
 firrtl.circuit "main_extmodule" {
@@ -839,22 +840,22 @@ firrtl.circuit "CollidingSymbolsMultiInline" {
   }
 }
 
-// CHECK-LABEL: firrtl.circuit "TrackInliningInDebugInfo"
+// DBG-LABEL: firrtl.circuit "TrackInliningInDebugInfo"
 firrtl.circuit "TrackInliningInDebugInfo" {
-  // CHECK: firrtl.module @TrackInliningInDebugInfo
+  // DBG: firrtl.module @TrackInliningInDebugInfo
   firrtl.module @TrackInliningInDebugInfo() {
-    // CHECK: [[SCOPE_FOO:%.+]] = dbg.scope "foo", "Foo"
-    // CHECK: [[SCOPE_BAR:%.+]] = dbg.scope "bar", "Bar" scope [[SCOPE_FOO]]
-    // CHECK: dbg.variable "a", {{%.+}} scope [[SCOPE_BAR]]
-    // CHECK: [[SCOPE_IMPL:%.+]] = dbg.scope "impl", "Bugu" scope [[SCOPE_BAR]]
-    // CHECK: dbg.variable "b", {{%.+}} scope [[SCOPE_IMPL]]
+    // DBG: [[SCOPE_FOO:%.+]] = dbg.scope "foo", "Foo"
+    // DBG: [[SCOPE_BAR:%.+]] = dbg.scope "bar", "Bar" scope [[SCOPE_FOO]]
+    // DBG: dbg.variable "a", {{%.+}} scope [[SCOPE_BAR]]
+    // DBG: [[SCOPE_IMPL:%.+]] = dbg.scope "impl", "Bugu" scope [[SCOPE_BAR]]
+    // DBG: dbg.variable "b", {{%.+}} scope [[SCOPE_IMPL]]
     firrtl.instance foo @Foo()
   }
-  // CHECK-NOT: @Foo
+  // DBG-NOT: @Foo
   firrtl.module private @Foo() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
     firrtl.instance bar @Bar()
   }
-  // CHECK-NOT: @Bar
+  // DBG-NOT: @Bar
   firrtl.module private @Bar() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
     %wire = firrtl.wire : !firrtl.uint<1>
     dbg.variable "a", %wire : !firrtl.uint<1>
@@ -865,22 +866,22 @@ firrtl.circuit "TrackInliningInDebugInfo" {
   }
 }
 
-// CHECK-LABEL: firrtl.circuit "TrackFlatteningInDebugInfo"
+// DBG-LABEL: firrtl.circuit "TrackFlatteningInDebugInfo"
 firrtl.circuit "TrackFlatteningInDebugInfo" {
-  // CHECK: firrtl.module @TrackFlatteningInDebugInfo
+  // DBG: firrtl.module @TrackFlatteningInDebugInfo
   firrtl.module @TrackFlatteningInDebugInfo() attributes {annotations = [{class = "firrtl.transforms.FlattenAnnotation"}]} {
-    // CHECK: [[SCOPE_FOO:%.+]] = dbg.scope "foo", "Foo"
-    // CHECK: [[SCOPE_BAR:%.+]] = dbg.scope "bar", "Bar" scope [[SCOPE_FOO]]
-    // CHECK: dbg.variable "a", {{%.+}} scope [[SCOPE_BAR]]
-    // CHECK: [[SCOPE_IMPL:%.+]] = dbg.scope "impl", "Bugu" scope [[SCOPE_BAR]]
-    // CHECK: dbg.variable "b", {{%.+}} scope [[SCOPE_IMPL]]
+    // DBG: [[SCOPE_FOO:%.+]] = dbg.scope "foo", "Foo"
+    // DBG: [[SCOPE_BAR:%.+]] = dbg.scope "bar", "Bar" scope [[SCOPE_FOO]]
+    // DBG: dbg.variable "a", {{%.+}} scope [[SCOPE_BAR]]
+    // DBG: [[SCOPE_IMPL:%.+]] = dbg.scope "impl", "Bugu" scope [[SCOPE_BAR]]
+    // DBG: dbg.variable "b", {{%.+}} scope [[SCOPE_IMPL]]
     firrtl.instance foo @Foo()
   }
-  // CHECK-NOT: @Foo
+  // DBG-NOT: @Foo
   firrtl.module private @Foo() {
     firrtl.instance bar @Bar()
   }
-  // CHECK-NOT: @Bar
+  // DBG-NOT: @Bar
   firrtl.module private @Bar() {
     %wire = firrtl.wire : !firrtl.uint<1>
     dbg.variable "a", %wire : !firrtl.uint<1>
@@ -891,10 +892,125 @@ firrtl.circuit "TrackFlatteningInDebugInfo" {
   }
 }
 
+// An inlined dbg.moduleinfo takes the instance's scope; the parent's stays
+// unscoped.
+// DBG-LABEL: firrtl.circuit "InlineModuleInfo"
+firrtl.circuit "InlineModuleInfo" {
+  // DBG: firrtl.module @InlineModuleInfo
+  firrtl.module @InlineModuleInfo() {
+    // DBG-NEXT: dbg.moduleinfo "Top"{{$}}
+    // DBG-NEXT: [[SCOPE_C:%.+]] = dbg.scope "c", "Child"
+    // DBG-NEXT: dbg.moduleinfo "Child" scope [[SCOPE_C]]
+    dbg.moduleinfo "Top"
+    firrtl.instance c @Child()
+  }
+  // DBG-NOT: @Child
+  firrtl.module private @Child() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    dbg.moduleinfo "Child"
+  }
+}
+
+// A scoped dbg.moduleinfo keeps its scope, which gets chained to the new one.
+// DBG-LABEL: firrtl.circuit "InlineNestedModuleInfo"
+firrtl.circuit "InlineNestedModuleInfo" {
+  // DBG: firrtl.module @InlineNestedModuleInfo
+  firrtl.module @InlineNestedModuleInfo() {
+    // DBG-NEXT: dbg.moduleinfo "A"{{$}}
+    // DBG-NEXT: [[SCOPE_B:%.+]] = dbg.scope "b", "B"
+    // DBG-NEXT: dbg.moduleinfo "B" scope [[SCOPE_B]]
+    // DBG-NEXT: [[SCOPE_C:%.+]] = dbg.scope "c", "C" scope [[SCOPE_B]]
+    // DBG-NEXT: dbg.moduleinfo "C" scope [[SCOPE_C]]
+    // DBG-NEXT: [[SCOPE_D:%.+]] = dbg.scope "d", "D" scope [[SCOPE_B]]
+    // DBG-NEXT: dbg.moduleinfo "D" scope [[SCOPE_D]]
+    dbg.moduleinfo "A"
+    firrtl.instance b @B()
+  }
+  // DBG-NOT: @B
+  firrtl.module private @B() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    dbg.moduleinfo "B"
+    %0 = dbg.scope "c", "C"
+    dbg.moduleinfo "C" scope %0
+    firrtl.instance d @D()
+  }
+  // DBG-NOT: @D
+  firrtl.module private @D() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    dbg.moduleinfo "D"
+  }
+}
+
+// DBG-LABEL: firrtl.circuit "FlattenModuleInfo"
+firrtl.circuit "FlattenModuleInfo" {
+  // DBG: firrtl.module @FlattenModuleInfo
+  firrtl.module @FlattenModuleInfo() attributes {annotations = [{class = "firrtl.transforms.FlattenAnnotation"}]} {
+    // DBG-NEXT: dbg.moduleinfo "Top"{{$}}
+    // DBG-NEXT: [[SCOPE_FOO:%.+]] = dbg.scope "foo", "Foo"
+    // DBG-NEXT: dbg.moduleinfo "Foo" scope [[SCOPE_FOO]]
+    // DBG-NEXT: [[SCOPE_BAR:%.+]] = dbg.scope "bar", "Bar" scope [[SCOPE_FOO]]
+    // DBG-NEXT: dbg.moduleinfo "Bar" scope [[SCOPE_BAR]]
+    dbg.moduleinfo "Top"
+    firrtl.instance foo @Foo()
+  }
+  // DBG-NOT: @Foo
+  firrtl.module private @Foo() {
+    dbg.moduleinfo "Foo"
+    firrtl.instance bar @Bar()
+  }
+  // DBG-NOT: @Bar
+  firrtl.module private @Bar() {
+    dbg.moduleinfo "Bar"
+  }
+}
+
+// The instances of an inlined module get its scope.
+// DBG-LABEL: firrtl.circuit "InlineInstanceScope"
+firrtl.circuit "InlineInstanceScope" {
+  // DBG: firrtl.module @InlineInstanceScope
+  firrtl.module @InlineInstanceScope() {
+    // DBG-NEXT: [[SCOPE_C:%.+]] = dbg.scope "c", "Child"
+    // DBG-NEXT: firrtl.instance c_leaf @Leaf() scope [[SCOPE_C]]
+    // DBG-NEXT: firrtl.instance c_ext @Ext() scope [[SCOPE_C]]
+    firrtl.instance c @Child()
+  }
+  // DBG-NOT: @Child
+  firrtl.module private @Child() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    firrtl.instance leaf @Leaf()
+    firrtl.instance ext @Ext()
+  }
+  firrtl.module private @Leaf() {}
+  firrtl.extmodule private @Ext()
+}
+
+// An instance that already has a scope keeps it, and the scope of a module
+// inlined through that instance is nested in it.
+// DBG-LABEL: firrtl.circuit "InlineScopedInstance"
+firrtl.circuit "InlineScopedInstance" {
+  // DBG: firrtl.module @InlineScopedInstance
+  firrtl.module @InlineScopedInstance() {
+    // DBG-NEXT: [[SCOPE_M:%.+]] = dbg.scope "m", "Mid"
+    // DBG-NEXT: [[SCOPE_C:%.+]] = dbg.scope "c", "C" scope [[SCOPE_M]]
+    // DBG-NEXT: firrtl.instance m_k @Leaf() scope [[SCOPE_C]]
+    // DBG-NEXT: [[SCOPE_D:%.+]] = dbg.scope "d", "D" scope [[SCOPE_C]]
+    // DBG-NEXT: firrtl.instance m_d_leaf @Leaf() scope [[SCOPE_D]]
+    firrtl.instance m @Mid()
+  }
+  // DBG-NOT: @Mid
+  firrtl.module private @Mid() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    %0 = dbg.scope "c", "C"
+    firrtl.instance k @Leaf() scope %0
+    firrtl.instance d @D() scope %0
+  }
+  // DBG-NOT: @D
+  firrtl.module private @D() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
+    firrtl.instance leaf @Leaf()
+  }
+  firrtl.module private @Leaf() {}
+}
+
 // -----
 
 // Test proper hierarchical inlining of RefType
 // CHECK-LABEL: firrtl.circuit "HierarchicalRefType" {
+// DBG-LABEL: firrtl.circuit "HierarchicalRefType" {
 firrtl.circuit "HierarchicalRefType" {
   firrtl.module @XmrSrcMod(out %_a: !firrtl.probe<uint<1>>) attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]}{
     %zero = firrtl.constant 0 : !firrtl.uint<1>

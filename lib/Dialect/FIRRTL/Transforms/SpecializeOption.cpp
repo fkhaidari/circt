@@ -99,7 +99,7 @@ struct SpecializeOptionPass
                 inst.getPortNamesAttr(), inst.getDomainInfoAttr(),
                 inst.getAnnotationsAttr(), inst.getPortAnnotationsAttr(),
                 builder.getArrayAttr({}), UnitAttr{}, UnitAttr{},
-                inst.getInnerSymAttr());
+                inst.getInnerSymAttr(), /*scope=*/Value());
             inst.replaceAllUsesWith(newInst);
             inst.erase();
 

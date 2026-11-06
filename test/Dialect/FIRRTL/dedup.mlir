@@ -1022,3 +1022,129 @@ firrtl.circuit "PublicModuleNoDedup" {
     firrtl.instance bar sym @sym @Bar_2()
   }
 }
+
+// Modules whose debug variables have different names must not dedup.
+// CHECK-LABEL: firrtl.circuit "DebugNamesDiffer"
+firrtl.circuit "DebugNamesDiffer" {
+  // CHECK: firrtl.module private @DbgA
+  firrtl.module private @DbgA(in %i: !firrtl.uint<1>) {
+    dbg.variable "a", %i : !firrtl.uint<1>
+  }
+  // CHECK: firrtl.module private @DbgB
+  firrtl.module private @DbgB(in %i: !firrtl.uint<1>) {
+    dbg.variable "b", %i : !firrtl.uint<1>
+  }
+  firrtl.module @DebugNamesDiffer() {
+    // CHECK: firrtl.instance a @DbgA
+    // CHECK-NEXT: firrtl.instance b @DbgB
+    %a_i = firrtl.instance a @DbgA(in i: !firrtl.uint<1>)
+    %b_i = firrtl.instance b @DbgB(in i: !firrtl.uint<1>)
+  }
+}
+
+// Modules whose debug variables have the same names dedup.
+// CHECK-LABEL: firrtl.circuit "DebugNamesSame"
+firrtl.circuit "DebugNamesSame" {
+  // CHECK: firrtl.module private @DbgC
+  firrtl.module private @DbgC(in %i: !firrtl.uint<1>) {
+    dbg.variable "a", %i : !firrtl.uint<1>
+  }
+  // CHECK-NOT: firrtl.module private @DbgD
+  firrtl.module private @DbgD(in %i: !firrtl.uint<1>) {
+    dbg.variable "a", %i : !firrtl.uint<1>
+  }
+  firrtl.module @DebugNamesSame() {
+    // CHECK: firrtl.instance c @DbgC
+    // CHECK-NEXT: firrtl.instance d @DbgC
+    %c_i = firrtl.instance c @DbgC(in i: !firrtl.uint<1>)
+    %d_i = firrtl.instance d @DbgD(in i: !firrtl.uint<1>)
+  }
+}
+
+// FIRRTL op names stay nonessential: modules that differ only in a node name
+// dedup when their debug variable names are the same.
+// CHECK-LABEL: firrtl.circuit "DebugNamesSameNodeNamesDiffer"
+firrtl.circuit "DebugNamesSameNodeNamesDiffer" {
+  // CHECK: firrtl.module private @DbgE
+  firrtl.module private @DbgE(in %i: !firrtl.uint<1>) {
+    %x = firrtl.node %i : !firrtl.uint<1>
+    dbg.variable "a", %x : !firrtl.uint<1>
+  }
+  // CHECK-NOT: firrtl.module private @DbgF
+  firrtl.module private @DbgF(in %i: !firrtl.uint<1>) {
+    %y = firrtl.node %i : !firrtl.uint<1>
+    dbg.variable "a", %y : !firrtl.uint<1>
+  }
+  firrtl.module @DebugNamesSameNodeNamesDiffer() {
+    // CHECK: firrtl.instance e @DbgE
+    // CHECK-NEXT: firrtl.instance f @DbgE
+    %e_i = firrtl.instance e @DbgE(in i: !firrtl.uint<1>)
+    %f_i = firrtl.instance f @DbgF(in i: !firrtl.uint<1>)
+  }
+}
+
+// Modules whose dbg.moduleinfo differ must not dedup.
+// CHECK-LABEL: firrtl.circuit "ModuleInfoDiffer"
+firrtl.circuit "ModuleInfoDiffer" {
+  // CHECK: firrtl.module private @InfoA
+  firrtl.module private @InfoA() {
+    dbg.moduleinfo "A"
+  }
+  // CHECK: firrtl.module private @InfoB
+  firrtl.module private @InfoB() {
+    dbg.moduleinfo "B"
+  }
+  firrtl.module @ModuleInfoDiffer() {
+    // CHECK: firrtl.instance a @InfoA
+    // CHECK-NEXT: firrtl.instance b @InfoB
+    firrtl.instance a @InfoA()
+    firrtl.instance b @InfoB()
+  }
+}
+
+// Modules whose instances use their own local dbg.scope dedup. A module whose
+// instance has no scope differs from them.
+// CHECK-LABEL: firrtl.circuit "InstanceScope"
+firrtl.circuit "InstanceScope" {
+  firrtl.module private @ScopeLeaf() {}
+  // CHECK: firrtl.module private @ScopeA
+  // CHECK-NEXT: [[S:%.+]] = dbg.scope "c", "C"
+  // CHECK-NEXT: firrtl.instance l @ScopeLeaf() scope [[S]]
+  firrtl.module private @ScopeA() {
+    %0 = dbg.scope "c", "C"
+    firrtl.instance l @ScopeLeaf() scope %0
+  }
+  // CHECK-NOT: firrtl.module private @ScopeB
+  firrtl.module private @ScopeB() {
+    %0 = dbg.scope "c", "C"
+    firrtl.instance l @ScopeLeaf() scope %0
+  }
+  // CHECK: firrtl.module private @ScopeE
+  firrtl.module private @ScopeE() {
+    %0 = dbg.scope "c", "C"
+    firrtl.instance l @ScopeLeaf()
+  }
+  firrtl.module @InstanceScope() {
+    // CHECK: firrtl.instance a @ScopeA
+    // CHECK-NEXT: firrtl.instance b @ScopeA
+    // CHECK-NEXT: firrtl.instance e @ScopeE
+    firrtl.instance a @ScopeA()
+    firrtl.instance b @ScopeB()
+    firrtl.instance e @ScopeE()
+  }
+}
+
+// External modules whose source class names differ must not dedup.
+// CHECK-LABEL: firrtl.circuit "SourceNameDiffer"
+firrtl.circuit "SourceNameDiffer" {
+  // CHECK: firrtl.extmodule private @ExtA() attributes {defname = "BB", sourceName = "A"}
+  firrtl.extmodule private @ExtA() attributes {defname = "BB", sourceName = "A"}
+  // CHECK: firrtl.extmodule private @ExtB() attributes {defname = "BB", sourceName = "B"}
+  firrtl.extmodule private @ExtB() attributes {defname = "BB", sourceName = "B"}
+  firrtl.module @SourceNameDiffer() {
+    // CHECK: firrtl.instance a @ExtA
+    // CHECK-NEXT: firrtl.instance b @ExtB
+    firrtl.instance a @ExtA()
+    firrtl.instance b @ExtB()
+  }
+}

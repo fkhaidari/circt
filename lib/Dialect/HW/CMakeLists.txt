@@ -34,11 +34,13 @@ add_circt_dialect_library(CIRCTHW
   CIRCTHWAttrIncGen
   CIRCTHWEnumsIncGen
   CIRCTHWCanonicalizationIncGen
+  MLIRDebugIncGen
 
   LINK_COMPONENTS
   Support
 
   LINK_LIBS PUBLIC
+  CIRCTDebug
   CIRCTSupport
   MLIRIR
   MLIRInferTypeOpInterface

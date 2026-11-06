@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/HW/HWInstanceGraph.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/HW/HWPasses.h"
@@ -66,17 +67,21 @@ struct PrefixingInliner : public InlinerInterface {
   mlir::AttrTypeReplacer *replacer;
   HierPathTable *pathsTable;
   hw::InnerRefAttr instanceRef;
+  /// Debug scope of the inlined instance, or null if none was created.
+  Value debugScope;
+  bool debugScopeUsed = false;
+  SmallVector<InstanceOp> scopedInstances;
 
   PrefixingInliner(MLIRContext *context, StringRef prefix,
                    InnerSymbolNamespace *ns, HWModuleOp parentModule,
                    HWModuleOp sourceModule,
                    DenseMap<StringAttr, StringAttr> *symMapping,
                    mlir::AttrTypeReplacer *replacer, HierPathTable *pathsTable,
-                   hw::InnerRefAttr instanceRef)
+                   hw::InnerRefAttr instanceRef, Value debugScope)
       : InlinerInterface(context), prefix(prefix), ns(ns),
         parentModule(parentModule), sourceModule(sourceModule),
         symMapping(symMapping), replacer(replacer), pathsTable(pathsTable),
-        instanceRef(instanceRef) {}
+        instanceRef(instanceRef), debugScope(debugScope) {}
 
   bool isLegalToInline(Region *dest, Region *src, bool wouldBeCloned,
                        IRMapping &valueMapping) const override {
@@ -97,12 +102,56 @@ struct PrefixingInliner : public InlinerInterface {
       iterator_range<Region::iterator> inlinedBlocks) override {
     for (Block &block : inlinedBlocks)
       block.walk([&](Operation *op) {
+        // Debug operations are placed in the instance's scope instead of
+        // being renamed.
+        if (updateDebugScope(op))
+          return;
         updateNames(op);
         updateInnerSymbols(op);
       });
 
     // Update hierarchical paths that reference the inlined instance
     updateHierPaths();
+  }
+
+  /// Give debug operations and instances that used the inlined module's
+  /// implicit scope the scope of the inlined instance. Returns true for debug
+  /// operations, whose names are not prefixed.
+  bool updateDebugScope(Operation *op) {
+    auto update = [&](auto op) {
+      if (debugScope && !op.getScope()) {
+        op.getScopeMutable().assign(debugScope);
+        return true;
+      }
+      return false;
+    };
+    if (auto varOp = dyn_cast<debug::VariableOp>(op)) {
+      debugScopeUsed |= update(varOp);
+      return true;
+    }
+    if (auto scopeOp = dyn_cast<debug::ScopeOp>(op)) {
+      debugScopeUsed |= update(scopeOp);
+      return true;
+    }
+    if (auto infoOp = dyn_cast<debug::ModuleInfoOp>(op)) {
+      debugScopeUsed |= update(infoOp);
+      return true;
+    }
+    if (auto instOp = dyn_cast<InstanceOp>(op))
+      if (update(instOp))
+        scopedInstances.push_back(instOp);
+    return isa_and_nonnull<debug::DebugDialect>(op->getDialect());
+  }
+
+  /// Drop the scope again if only instances were placed in it, so that designs
+  /// without debug operations are left unchanged. Call it after `inlineRegion`
+  /// and before the inlined module is erased.
+  void finalizeDebugScope() {
+    if (!debugScopeUsed)
+      for (auto inst : scopedInstances)
+        inst.getScopeMutable().clear();
+    if (debugScope.use_empty())
+      debugScope.getDefiningOp()->erase();
   }
 
   void updateHierPaths() const {
@@ -317,15 +366,22 @@ void FlattenModulesPass::runOnOperation() {
         if (auto sym = inst.getInnerSymAttr())
           instanceRef = inst.getInnerRef();
 
+        // Scope for the debug info of the inlined body. It is erased below
+        // if nothing ended up in it.
+        OpBuilder builder(inst);
+        auto debugScope = debug::ScopeOp::create(
+            builder, inst.getLoc(), inst.getInstanceNameAttr(),
+            module.getModuleNameAttr(), inst.getScope());
+
         PrefixingInliner inliner(&getContext(), inst.getInstanceName(),
                                  nsPtr.get(), parentModule, module,
                                  &oldToNewInnerSyms, &instanceReplacer,
-                                 &pathsTable, instanceRef);
+                                 &pathsTable, instanceRef, debugScope);
 
         if (failed(mlir::inlineRegion(inliner, config.getCloneCallback(),
-                                      &module.getBody(), inst,
-                                      inst.getOperands(), inst.getResults(),
-                                      std::nullopt, !isLastModuleUse))) {
+                                      &module.getBody(), inst, inst.getInputs(),
+                                      inst.getResults(), std::nullopt,
+                                      !isLastModuleUse))) {
           inst.emitError("failed to inline '")
               << module.getModuleName() << "' into instance '"
               << inst.getInstanceName() << "'";
@@ -333,6 +389,7 @@ void FlattenModulesPass::runOnOperation() {
         }
 
         inst.erase();
+        inliner.finalizeDebugScope();
         if (isLastModuleUse)
           module->erase();
       }

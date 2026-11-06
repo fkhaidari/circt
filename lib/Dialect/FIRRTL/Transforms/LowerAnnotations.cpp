@@ -312,6 +312,34 @@ static LogicalResult applyConventionAnno(const AnnoPathValue &target,
   return error() << "can only target to a module or extmodule";
 }
 
+static LogicalResult applyDebugSourceNameAnno(const AnnoPathValue &target,
+                                              DictionaryAttr anno,
+                                              ApplyState &state) {
+  auto *op = target.ref.getOp();
+  auto loc = op->getLoc();
+  auto error = [&]() {
+    return mlir::emitError(loc) << debugSourceNameAnnoClass << " ";
+  };
+
+  auto extModule = dyn_cast<FExtModuleOp>(op);
+  if (!isa<OpAnnoTarget>(target.ref) || !extModule)
+    return error() << "must target an extmodule";
+  if (!target.isLocal())
+    return error() << "must be local";
+
+  auto name =
+      tryGetAs<StringAttr>(anno, anno, "name", loc, debugSourceNameAnnoClass);
+  if (!name)
+    return failure();
+  if (name.empty())
+    return error() << "name must not be empty";
+  if (auto prev = extModule.getSourceNameAttr(); prev && prev != name)
+    return error() << "extmodule already has a source name";
+
+  extModule.setSourceNameAttr(name);
+  return success();
+}
+
 static LogicalResult applyBodyTypeLoweringAnno(const AnnoPathValue &target,
                                                DictionaryAttr anno,
                                                ApplyState &state) {

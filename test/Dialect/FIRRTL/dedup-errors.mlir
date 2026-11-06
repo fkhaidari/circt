@@ -777,3 +777,27 @@ firrtl.circuit "InstanceChoiceDedup" attributes {annotations = [{
     firrtl.instance w3 @Wrapper3()
   }
 }
+
+// -----
+
+// The name of a Debug op is essential, so modules that differ only in it
+// are not deduplicated.
+
+// expected-error@below {{module "Dbg1" not deduplicated with "Dbg0"}}
+firrtl.circuit "MustDedup" attributes {annotations = [{
+      class = "firrtl.transforms.MustDeduplicateAnnotation",
+      modules = ["~MustDedup|Dbg0", "~MustDedup|Dbg1"]
+    }]} {
+  firrtl.module private @Dbg0(in %i: !firrtl.uint<1>) {
+    // expected-note@below {{first operation has attribute 'name' with value "a"}}
+    dbg.variable "a", %i : !firrtl.uint<1>
+  }
+  firrtl.module private @Dbg1(in %i: !firrtl.uint<1>) {
+    // expected-note@below {{second operation has value "b"}}
+    dbg.variable "b", %i : !firrtl.uint<1>
+  }
+  firrtl.module @MustDedup() {
+    %i0 = firrtl.instance d0 @Dbg0(in i: !firrtl.uint<1>)
+    %i1 = firrtl.instance d1 @Dbg1(in i: !firrtl.uint<1>)
+  }
+}

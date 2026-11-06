@@ -349,6 +349,9 @@ def SVVerbatimModuleOp
     The "sv.verbatim.module" operation represents a the module interface of a
     verbatim verilog module. It references an "sv.verbatim.source" operation
     that contains the actual verilog source code.
+
+    The optional 'sourceName' attribute is the source-language class of the
+    module, for debug info.
   }];
 
   let arguments = (ins
@@ -359,7 +362,8 @@ def SVVerbatimModuleOp
     OptionalAttr<LocationArrayAttr>:$port_locs,
     ParamDeclArrayAttr:$parameters,
     FlatSymbolRefAttr:$source,
-    OptionalAttr<StrAttr>:$verilogName);
+    OptionalAttr<StrAttr>:$verilogName,
+    OptionalAttr<StrAttr>:$sourceName);
 
   let results = (outs);
 
@@ -382,7 +386,7 @@ def SVVerbatimModuleOp
       build($_builder, $_state, name, /*sym_visibility=*/{},
             TypeAttr::get(moduleType),
             $_builder.getArrayAttr(portAttrs), $_builder.getArrayAttr(portLocs),
-            parameters, source, verilogName);
+            parameters, source, verilogName, /*sourceName=*/StringAttr{});
     }]>
   ];
 

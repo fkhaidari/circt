@@ -199,7 +199,7 @@ void HWParameterizeConstantPortsPass::processModule(
     auto newInst = InstanceOp::create(
         builder, inst.getLoc(), inst.getResultTypes(),
         inst.getInstanceNameAttr(), inst.getModuleNameAttr(), newInputs,
-        newPortNamesAttr, inst.getResultNamesAttr(),
+        inst.getScope(), newPortNamesAttr, inst.getResultNamesAttr(),
         builder.getArrayAttr(instParams), inst.getInnerSymAttr(),
         inst.getDoNotPrintAttr());
 

@@ -3,6 +3,9 @@
 This dialect provides operations and types to interleave debug information (DI)
 with other parts of the IR.
 
+The [UHDI rationale](RationaleUHDI.md) covers how a frontend describes
+source-level debug info and how CIRCT carries it to the emitted netlist.
+
 [TOC]
 
 

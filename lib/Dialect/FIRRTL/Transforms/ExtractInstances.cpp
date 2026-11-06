@@ -656,7 +656,10 @@ void ExtractInstancesPass::extractInstances() {
       if (newParentInst.getInnerSymAttr())
         innerRefToInstances[getInnerRefTo(newParentInst)] = newParentInst;
 
+      // The debug scope stays in the old parent. The moved instance falls back
+      // to its new parent in the debug info.
       auto newInst = cast<InstanceOp>(inst->clone());
+      newInst.getScopeMutable().clear();
 
       // Ensure that the `inner_sym` of the instance is unique within the parent
       // module we're extracting it to.
@@ -1030,6 +1033,7 @@ void ExtractInstancesPass::groupInstances() {
     for (auto inst : insts) {
       inst->remove();
       builder.insert(inst);
+      inst.getScopeMutable().clear();
       for (auto result : inst.getResults()) {
         Value dst = result;
         Value src = wrapper.getArgument(portIdx);

@@ -278,7 +278,7 @@ Value ResolveXMRRefPass::resolveViaBindContext(sv::XMRRefOp xmrRefOp,
         instances.push_back(userInst);
 
     for (auto userInst : instances) {
-      SmallVector<Value> operands(userInst.getOperands());
+      SmallVector<Value> operands(userInst.getInputs());
       if (!bindInstSet.contains(userInst.getOperation())) {
         xmrRefOp.emitError("payload module has non-bind instances; refusing to "
                            "resolve bind-context XMR ambiguously");
@@ -297,6 +297,8 @@ Value ResolveXMRRefPass::resolveViaBindContext(sv::XMRRefOp xmrRefOp,
 
       if (userInst.getDoNotPrint())
         newInst.setDoNotPrintAttr(UnitAttr::get(newInst.getContext()));
+      if (auto scope = userInst.getScope())
+        newInst.getScopeMutable().assign(scope);
 
       userInst.erase();
     }
@@ -306,14 +308,14 @@ Value ResolveXMRRefPass::resolveViaBindContext(sv::XMRRefOp xmrRefOp,
     inputPortIdx = captureIt->second;
 
     auto bindInst = bindInstances.front();
-    if (inputPortIdx >= bindInst.getNumOperands()) {
+    if (inputPortIdx >= bindInst.getInputs().size()) {
       xmrRefOp.emitError("bind instance is missing required capture input "
                          "operand for previously materialized XMR");
       bindContextDiagnosedFailure = true;
       return nullptr;
     }
 
-    return bindInst.getOperand(inputPortIdx);
+    return bindInst.getInputs()[inputPortIdx];
   }
 }
 
@@ -523,7 +525,7 @@ Value ResolveXMRRefPass::boreRecursively(ArrayAttr pathArray, unsigned index,
 
   Value boredValue;
   for (auto userInst : instances) {
-    SmallVector<Value> operands(userInst.getOperands());
+    SmallVector<Value> operands(userInst.getInputs());
     OpBuilder b(userInst);
     auto newInst = hw::InstanceOp::create(
         b, userInst.getLoc(), childMod, userInst.getInstanceNameAttr(),
@@ -534,6 +536,8 @@ Value ResolveXMRRefPass::boreRecursively(ArrayAttr pathArray, unsigned index,
 
     if (userInst.getDoNotPrint())
       newInst.setDoNotPrintAttr(UnitAttr::get(newInst.getContext()));
+    if (auto scope = userInst.getScope())
+      newInst.getScopeMutable().assign(scope);
 
     if (userInst == instOp)
       boredValue = newInst.getResult(resIdx);
@@ -573,8 +577,8 @@ Value ResolveXMRRefPass::getInstancePortValue(hw::InstanceOp inst,
     if (outIdx < inst.getNumResults())
       return inst.getResult(outIdx);
   } else {
-    if (inOrInoutIdx < inst.getNumOperands())
-      return inst.getOperand(inOrInoutIdx);
+    if (inOrInoutIdx < inst.getInputs().size())
+      return inst.getInputs()[inOrInoutIdx];
   }
 
   return nullptr;

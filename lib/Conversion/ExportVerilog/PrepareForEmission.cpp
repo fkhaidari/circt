@@ -89,8 +89,8 @@ static void spillWiresForInstanceInputs(HWInstanceLike op) {
   SmallString<32> nameTmp{"_", op.getInstanceName(), "_"};
   auto namePrefixSize = nameTmp.size();
 
-  for (size_t opNum = 0, e = op->getNumOperands(); opNum != e; ++opNum) {
-    auto src = op->getOperand(opNum);
+  for (size_t opNum = 0, e = op.getInputs().size(); opNum != e; ++opNum) {
+    auto src = op.getInputs()[opNum];
 
     if (isSimpleReadOrPort(src))
       continue;
@@ -106,7 +106,7 @@ static void spillWiresForInstanceInputs(HWInstanceLike op) {
     auto connect = AssignOp::create(builder, newWire, src);
     newWireRead->moveBefore(op);
     connect->moveBefore(op);
-    op->setOperand(opNum, newWireRead);
+    op.getInputsMutable()[opNum].set(newWireRead);
   }
 }
 
