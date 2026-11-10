@@ -448,6 +448,15 @@ def HWInstanceLike : OpInterface<"HWInstanceLike", [
   // construction of unnecessary intermedate array attributes).
   let methods = [
     InterfaceMethod<[{
+      Return the values connected to the input ports, in input port order.
+    }], "::mlir::OperandRange", "getInputs">,
+
+    InterfaceMethod<[{
+      Return the mutable operands connected to the input ports, in input port
+      order.
+    }], "::mlir::MutableOperandRange", "getInputsMutable">,
+
+    InterfaceMethod<[{
       Return the name of the specified input port or null if it cannot be
       determined.
     }], "::mlir::StringAttr", "getInputName", (ins "size_t":$idx),

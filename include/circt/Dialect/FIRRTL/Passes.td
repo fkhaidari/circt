@@ -182,6 +182,10 @@ def Inliner : Pass<"firrtl-inliner", "firrtl::CircuitOp"> {
     ```
   }];
   let dependentDialects = ["debug::DebugDialect"];
+  let options = [
+    Option<"emitDebugInfo", "emit-debug-info", "bool", "false",
+           "Create debug scopes for inlined instances">
+  ];
   let statistics = [
     Statistic<"numInstancesInlined", "num-instances-inlined",
       "Number of instances inlined into their parent">,
@@ -665,11 +669,22 @@ def LowerIntmodules : Pass<"firrtl-lower-intmodules", "firrtl::CircuitOp"> {
   ];
 }
 
-def LowerIntrinsics : Pass<"firrtl-lower-intrinsics", "firrtl::FModuleOp"> {
+def LowerIntrinsics : InterfacePass<"firrtl-lower-intrinsics",
+                                     "firrtl::FModuleLike"> {
   let summary = "Lower intrinsics";
   let description = [{
     This pass lowers generic intrinsic ops to their implementation or op.
+
+    The `circt_debug_*` intrinsics are converted to Debug dialect ops when
+    `emit-debug-info` is set, and erased otherwise. In a `firrtl.class` body
+    they are always erased. Without `emit-debug-info`, the `sourceName` of a
+    `firrtl.extmodule` is dropped.
   }];
+  let options = [
+    Option<"emitDebugInfo", "emit-debug-info", "bool", "false",
+           "Convert debug intrinsics to Debug ops instead of erasing them">
+  ];
+  let dependentDialects = ["debug::DebugDialect"];
   let statistics = [
     Statistic<"numConverted", "num-converted", "Number of intrinsic operations lowered">,
   ];
@@ -795,6 +810,11 @@ def MaterializeDebugInfo :
     registers, and instances throughout the pipeline. The `DebugInfo` analysis
     can then be used at a later point in the pipeline to obtain a source
     language view into the lowered IR.
+
+    A port or declaration that existing Debug ops already describe, for example
+    those converted from a frontend's intrinsics, gets no variable. The pass
+    assumes that a frontend which describes a declaration describes all of it.
+    A declaration that is described only in part gets no variable for the rest.
   }];
   let dependentDialects = ["debug::DebugDialect"];
 }

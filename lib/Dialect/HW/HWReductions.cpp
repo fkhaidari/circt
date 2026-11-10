@@ -274,7 +274,7 @@ struct ModuleOutputPruner : public Reduction {
       auto newOp = InstanceOp::create(
           builder, instOp.getLoc(), newResultTypes,
           instOp.getInstanceNameAttr(), instOp.getModuleNameAttr(),
-          instOp.getInputs(), instOp.getArgNamesAttr(),
+          instOp.getInputs(), instOp.getScope(), instOp.getArgNamesAttr(),
           builder.getArrayAttr(newResultNames), instOp.getParametersAttr(),
           instOp.getInnerSymAttr(), instOp.getDoNotPrintAttr());
       for (auto [oldResult, newResult] :

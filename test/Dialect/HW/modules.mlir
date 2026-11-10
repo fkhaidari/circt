@@ -18,6 +18,9 @@ hw.module.extern @C(in %nameOfPortInSV: i1, out "": i1, out "": i1)
 hw.module.extern @explicitResultName(out FOO: i1)
 // CHECK-LABEL: hw.module.extern @explicitResultName(out FOO : i1)
 
+hw.module.extern @SourceName(in %a: i1) attributes {sourceName = "my.pkg.BB"}
+// CHECK-LABEL: hw.module.extern @SourceName(in %a : i1) attributes {sourceName = "my.pkg.BB"}
+
 hw.module.extern @D_ATTR(in %a: i1, out "": i1, out "": i1) attributes {filename = "test.v", p = {DEFAULT = 0 : i64}}
 
 // CHECK-LABEL: hw.module.extern @D_ATTR(in %a : i1, out "" : i1, out "" : i1) attributes {filename = "test.v", p = {DEFAULT = 0 : i64}}

@@ -1828,6 +1828,24 @@ firrtl.circuit "ZeroWidthForeignOperand" {
 
 // -----
 
+// The debug scope of an instance carries over to hw.instance.
+firrtl.circuit "InstanceScope" {
+  firrtl.module private @ScopeLeaf(in %a: !firrtl.uint<1>) {}
+  // CHECK-LABEL: hw.module @InstanceScope(
+  firrtl.module @InstanceScope(in %a: !firrtl.uint<1>) {
+    // CHECK-NEXT: [[S:%.+]] = dbg.scope "c", "C"
+    // CHECK-NEXT: hw.instance "l" @ScopeLeaf(a: %a: i1) -> () scope [[S]]
+    // CHECK-NEXT: hw.instance "m" @ScopeLeaf(a: %a: i1) -> (){{$}}
+    %0 = dbg.scope "c", "C"
+    %l_a = firrtl.instance l @ScopeLeaf(in a: !firrtl.uint<1>) scope %0
+    firrtl.matchingconnect %l_a, %a : !firrtl.uint<1>
+    %m_a = firrtl.instance m @ScopeLeaf(in a: !firrtl.uint<1>)
+    firrtl.matchingconnect %m_a, %a : !firrtl.uint<1>
+  }
+}
+
+// -----
+
 // Check correct symbol mapping from output port to wire happens.
 firrtl.circuit "PortSym" {
   firrtl.extmodule private @Blackbox(out bar: !firrtl.uint<1>)

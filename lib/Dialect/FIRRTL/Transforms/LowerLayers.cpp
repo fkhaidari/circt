@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/Emit/EmitOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
@@ -454,6 +455,21 @@ LogicalResult LowerLayersPass::runOnModuleBody(FModuleOp moduleOp,
       replacement = localBuilder.clone(*value.getDefiningOp())->getResult(0);
       replacements.insert({value, replacement});
       return replacement;
+    }
+
+    // A debug scope has no XMR representation either.  Clone it, together with
+    // its parent scopes, at the start of the layer block.
+    if (auto scopeOp = value.getDefiningOp<debug::ScopeOp>()) {
+      Value parent;
+      if (auto scope = scopeOp.getScope()) {
+        parent = getReplacement(user, scope);
+        localBuilder.setInsertionPointAfter(parent.getDefiningOp());
+      }
+      auto clone = cast<debug::ScopeOp>(localBuilder.clone(*scopeOp));
+      if (parent)
+        clone.getScopeMutable().assign(parent);
+      replacements.insert({value, clone});
+      return clone;
     }
 
     // If the operand is an XMR ref, then we _have_ to clone it.

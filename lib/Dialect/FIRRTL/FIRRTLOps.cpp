@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
+#include "circt/Dialect/Debug/DebugDialect.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/CHIRRTLDialect.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAnnotations.h"
@@ -2500,7 +2501,8 @@ void InstanceOp::build(OpBuilder &builder, OperationState &result,
       module.getPortDirectionsAttr(), module.getPortNamesAttr(), domainInfoAttr,
       builder.getArrayAttr(annotations), portAnnotationsAttr,
       module.getLayersAttr(), lowerToBind ? builder.getUnitAttr() : UnitAttr(),
-      doNotPrint ? builder.getUnitAttr() : UnitAttr(), innerSym);
+      doNotPrint ? builder.getUnitAttr() : UnitAttr(), innerSym,
+      /*scope=*/Value());
 }
 
 void InstanceOp::build(OpBuilder &builder, OperationState &odsState,
@@ -2615,6 +2617,8 @@ InstanceOp::cloneWithErasedPorts(const llvm::BitVector &erasures) {
 
   if (auto outputFile = (*this)->getAttr("output_file"))
     clone->setAttr("output_file", outputFile);
+  if (auto scope = getScope())
+    clone.getScopeMutable().assign(scope);
 
   return clone;
 }
@@ -2720,6 +2724,8 @@ FInstanceLike InstanceOp::cloneWithInsertedPorts(
 
   if (auto outputFile = (*this)->getAttr("output_file"))
     clone->setAttr("output_file", outputFile);
+  if (auto scope = getScope())
+    clone.getScopeMutable().assign(scope);
 
   return clone;
 }
@@ -2776,6 +2782,9 @@ void InstanceOp::print(OpAsmPrinter &p) {
                    getPortNames().getValue(), portTypes,
                    getPortAnnotations().getValue(), {}, {},
                    getDomainInfo().getValue());
+
+  if (auto scope = getScope())
+    p << " scope " << scope;
 }
 
 ParseResult InstanceOp::parse(OpAsmParser &parser, OperationState &result) {
@@ -2813,6 +2822,17 @@ ParseResult InstanceOp::parse(OpAsmParser &parser, OperationState &result) {
                        entryArgs, portDirections, portNames, portTypes,
                        portAnnotations, portSyms, portLocs, domains))
     return failure();
+
+  if (succeeded(parser.parseOptionalKeyword("scope"))) {
+    // A graph region may use the scope before the `dbg.scope` op that loads
+    // the Debug dialect.
+    context->getOrLoadDialect<debug::DebugDialect>();
+    OpAsmParser::UnresolvedOperand scope;
+    if (parser.parseOperand(scope) ||
+        parser.resolveOperand(scope, debug::ScopeType::get(context),
+                              result.operands))
+      return failure();
+  }
 
   // Add the attributes. We let attributes defined in the attr-dict override
   // attributes parsed out of the module signature.

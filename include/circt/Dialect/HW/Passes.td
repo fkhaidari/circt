@@ -72,7 +72,11 @@ def FlattenModules : Pass<"hw-flatten-modules", "mlir::ModuleOp"> {
 
     By default, all private modules are inlined. The pass supports heuristics to
     control which modules are inlined based on their characteristics.
+
+    Debug operations of an inlined module are placed in a `dbg.scope` that
+    describes the inlined instance.
   }];
+  let dependentDialects = ["circt::debug::DebugDialect"];
   let options = [
     Option<"inlineEmpty", "hw-inline-empty", "bool", "true",
            "Inline modules that are empty (only contain hw.output)">,

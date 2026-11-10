@@ -13,6 +13,7 @@
 #ifndef CIRCT_DIALECT_FIRRTL_FIRRTLDECLARATIONS_TD
 #define CIRCT_DIALECT_FIRRTL_FIRRTLDECLARATIONS_TD
 
+include "circt/Dialect/Debug/DebugScopeType.td"
 include "circt/Dialect/FIRRTL/FIRRTLAttributes.td"
 include "circt/Dialect/FIRRTL/FIRRTLDialect.td"
 include "circt/Dialect/FIRRTL/FIRRTLEnums.td"
@@ -58,9 +59,15 @@ def InstanceOp : HardwareDeclOp<"instance", [
     This represents an instance of a module.  The results are the modules inputs
     and outputs.  The inputs have flip type, the outputs do not.
 
+    The optional `scope` operand places the instance in a `dbg.scope` for
+    debug info. The ModuleInliner sets it on the instances it moves out of an
+    inlined module. It has no effect on the hardware; a pass that drops it
+    only moves the instance to the enclosing module in the debug info.
+
     Examples:
     ```mlir
     %0 = firrtl.instance foo @Foo(in io: !firrtl.uint)
+    %1 = firrtl.instance bar @Bar(in io: !firrtl.uint) scope %s
     ```
   }];
 
@@ -69,7 +76,8 @@ def InstanceOp : HardwareDeclOp<"instance", [
       StrArrayAttr:$portNames, DomainInfoAttr:$domainInfo,
       AnnotationArrayAttr:$annotations, PortAnnotationsAttr:$portAnnotations,
       LayerArrayAttr:$layers, UnitAttr:$lowerToBind, UnitAttr:$doNotPrint,
-      OptionalAttr<InnerSymAttr>:$inner_sym);
+      OptionalAttr<InnerSymAttr>:$inner_sym,
+      Optional<DebugScopeType>:$scope);
 
   let results = (outs Variadic<AnyType>:$results);
 

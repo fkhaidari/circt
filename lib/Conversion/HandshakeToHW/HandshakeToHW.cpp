@@ -355,7 +355,7 @@ static LogicalResult convertExtMemoryOps(HWModuleOp mod) {
         getMemoryIOInfo(arg.getLoc(), memName.strref() + "_out", outArgI,
                         inputs, hw::ModulePort::Direction::Output);
 
-    auto memOutputArgs = extmemInstance.getOperands().drop_front();
+    auto memOutputArgs = extmemInstance.getInputs().drop_front();
     b.setInsertionPoint(mod.getBodyBlock()->getTerminator());
     auto memOutputStruct = hw::StructCreateOp::create(
         b, arg.getLoc(), outPortInfo.type, memOutputArgs);

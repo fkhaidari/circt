@@ -1299,7 +1299,8 @@ public:
   /// Initialize the inliner to run on this circuit.
   Inliner(CircuitOp circuit, SymbolTable &symbolTable,
           CircuitNamespace &circuitNamespace,
-          const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner);
+          const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner,
+          bool emitDebugInfo);
 
   /// Run the inliner.
   LogicalResult run();
@@ -1572,6 +1573,9 @@ private:
   /// The debug scopes created for inlined instances.
   /// Scopes that are unused after inlining will be deleted again.
   SmallVector<debug::ScopeOp> debugScopes;
+
+  /// Whether to create debug scopes for inlined instances.
+  bool emitDebugInfo;
 };
 } // namespace
 
@@ -1579,10 +1583,11 @@ private:
 
 Inliner::Inliner(CircuitOp circuit, SymbolTable &symbolTable,
                  CircuitNamespace &circuitNamespace,
-                 const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner)
+                 const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner,
+                 bool emitDebugInfo)
     : circuit(circuit), context(circuit.getContext()), symbolTable(symbolTable),
       circuitNamespace(circuitNamespace), inliningFacts(inliningFacts),
-      nlaPlanner(nlaPlanner) {}
+      nlaPlanner(nlaPlanner), emitDebugInfo(emitDebugInfo) {}
 
 LogicalResult Inliner::run() {
   if (failed(inlineModules()))
@@ -1604,13 +1609,15 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
   // Debug operations with implicit module scope now need an explicit scope,
   // since inlining has destroyed the module whose scope they implicitly used.
   auto updateDebugScope = [&](auto op) {
-    if (!op.getScope())
+    if (!op.getScope() && il.debugScope)
       op.getScopeMutable().assign(il.debugScope);
   };
   if (auto varOp = dyn_cast<debug::VariableOp>(op))
     return updateDebugScope(varOp), false;
   if (auto scopeOp = dyn_cast<debug::ScopeOp>(op))
     return updateDebugScope(scopeOp), false;
+  if (auto infoOp = dyn_cast<debug::ModuleInfoOp>(op))
+    return updateDebugScope(infoOp), false;
 
   // Prefix the "name" attribute, when present.
   if (auto nameAttr = op->getAttrOfType<StringAttr>("name"))
@@ -1639,12 +1646,11 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
 
 bool Inliner::renameInstance(StringRef prefix, InliningLevel &il,
                              Operation *oldInst, Operation *newInst) {
-  // TODO: No way yet to annotate an explicit parent scope on instances.
-  // Just emit a note in debug runs until this is resolved.
-  LLVM_DEBUG({
-    if (il.debugScope)
-      llvm::dbgs() << "Discarding parent debug scope for " << *oldInst << "\n";
-  });
+  // Like debug ops, an instance without a scope used the inlined module's.
+  // Instance choices have no scope operand and stay in the enclosing module.
+  if (auto inst = dyn_cast<InstanceOp>(newInst))
+    if (!inst.getScope() && il.debugScope)
+      inst.getScopeMutable().assign(il.debugScope);
 
   auto oldInstSym = getInnerSymName(oldInst);
   auto symbolChanged = rename(prefix, newInst, il);
@@ -1999,7 +2005,12 @@ LogicalResult Inliner::processInto(StringRef prefix, InliningLevel &il,
 
     InliningLevel childIL(il.mic, childModule);
     setActiveNLAsForChild(il.activeNLAs, childIL, instance);
-    createDebugScope(childIL, instance, il.debugScope);
+    // An instance moved here by an earlier inliner run keeps its scope.
+    Value parentScope = il.debugScope;
+    if (auto scope = instance.getScope())
+      if (auto clonedScope = mapper.lookupOrNull(scope))
+        parentScope = clonedScope;
+    createDebugScope(childIL, instance, parentScope);
 
     // Create the wire mapping for results + ports.
     auto nestedPrefix = (prefix + instance.getName() + "_").str();
@@ -2052,7 +2063,7 @@ LogicalResult Inliner::processInstances(FModuleOp module, bool flatten) {
     InliningLevel childIL(mic, target);
     setActiveNLAsForChild(/* Activate all through this instance */ std::nullopt,
                           childIL, instance);
-    createDebugScope(childIL, instance);
+    createDebugScope(childIL, instance, instance.getScope());
 
     auto nestedPrefix = (instance.getName() + "_").str();
     mapPortsToWires(nestedPrefix, childIL, mapper);
@@ -2076,6 +2087,8 @@ LogicalResult Inliner::processInstances(FModuleOp module, bool flatten) {
 
 void Inliner::createDebugScope(InliningLevel &il, InstanceOp instance,
                                Value parentScope) {
+  if (!emitDebugInfo)
+    return;
   auto op = debug::ScopeOp::create(
       il.mic.b, instance.getLoc(), instance.getInstanceNameAttr(),
       instance.getModuleNameAttr().getAttr(), parentScope);
@@ -2476,7 +2489,8 @@ class InlinerPass : public circt::firrtl::impl::InlinerBase<InlinerPass> {
 
     // Run Inlining: Clone (P3), and writeback (P4).
     CircuitNamespace circuitNamespace(circuit);
-    Inliner inliner(circuit, symbolTable, circuitNamespace, *facts, nlaPlanner);
+    Inliner inliner(circuit, symbolTable, circuitNamespace, *facts, nlaPlanner,
+                    emitDebugInfo);
     if (failed(inliner.run()))
       signalPassFailure();
 

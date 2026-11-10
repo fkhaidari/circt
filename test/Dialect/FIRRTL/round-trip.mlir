@@ -9,6 +9,9 @@ firrtl.circuit "Basic" attributes {
   } {
 firrtl.extmodule @Basic()
 
+// CHECK: firrtl.extmodule @SourceName() attributes {sourceName = "my.pkg.BB"}
+firrtl.extmodule @SourceName() attributes {sourceName = "my.pkg.BB"}
+
 // CHECK: firrtl.module @Top(in %arg0: !firrtl.uint<1>) attributes {portNames = [""]}
 firrtl.module @Top(in %arg0: !firrtl.uint<1>) attributes {portNames = [""]} {}
 
@@ -511,6 +514,18 @@ firrtl.module @RegInitial(in %clock: !firrtl.clock, in %reset: !firrtl.uint<1>,
   %t = firrtl.reg %clock {initial = -1 : si8} : !firrtl.clock, !firrtl.sint<8>
 
   firrtl.matchingconnect %q, %r : !firrtl.uint<8>
+}
+
+// An instance may sit in a debug scope.
+firrtl.module private @ScopedChild(in %a: !firrtl.uint<1>) {}
+// CHECK-LABEL: firrtl.module @InstanceScope
+firrtl.module @InstanceScope() {
+  // CHECK-NEXT: [[SCOPE:%.+]] = dbg.scope "c", "C"
+  // CHECK-NEXT: %x_a = firrtl.instance x @ScopedChild(in a: !firrtl.uint<1>) scope [[SCOPE]]
+  // CHECK-NEXT: %y_a = firrtl.instance y @ScopedChild(in a: !firrtl.uint<1>){{$}}
+  %0 = dbg.scope "c", "C"
+  %x_a = firrtl.instance x @ScopedChild(in a: !firrtl.uint<1>) scope %0
+  %y_a = firrtl.instance y @ScopedChild(in a: !firrtl.uint<1>)
 }
 
 }

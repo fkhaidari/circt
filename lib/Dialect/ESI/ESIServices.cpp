@@ -748,10 +748,13 @@ ESIConnectServicesPass::surfaceReqs(hw::HWMutableModuleLike mod,
       clone->setDialectAttrs(req->getDialectAttrs());
       newOperands.push_back(clone.getToClient());
     }
-    inst->insertOperands(inst->getNumOperands(), newOperands);
-    // Set the names, if we know how.
-    if (auto hwInst = dyn_cast<hw::InstanceOp>(*inst))
+    // Set the inputs and names, if we know how.
+    if (auto hwInst = dyn_cast<hw::InstanceOp>(*inst)) {
+      hwInst.getInputsMutable().append(newOperands);
       hwInst.setArgNamesAttr(b.getArrayAttr(mod.getInputNames()));
+    } else {
+      inst->insertOperands(inst->getNumOperands(), newOperands);
+    }
   }
 
   // Erase the original requests since they have been cloned into the proper

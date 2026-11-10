@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Dialect/HW/HWOps.h"
+#include "circt/Dialect/Debug/DebugDialect.h"
 #include "circt/Dialect/HW/CustomDirectiveImpl.h"
 #include "circt/Dialect/HW/HWAttributes.h"
 #include "circt/Dialect/HW/HWInstanceImplementation.h"
@@ -573,7 +574,7 @@ bool hw::isAnyModuleOrInstance(Operation *moduleOrInstance) {
 FunctionType hw::getModuleType(Operation *moduleOrInstance) {
   return TypeSwitch<Operation *, FunctionType>(moduleOrInstance)
       .Case<InstanceOp>([](auto instance) {
-        SmallVector<Type> inputs(instance->getOperandTypes());
+        SmallVector<Type> inputs(instance.getInputs().getTypes());
         SmallVector<Type> results(instance->getResultTypes());
         return FunctionType::get(instance->getContext(), inputs, results);
       })
@@ -1606,14 +1607,31 @@ ParseResult InstanceOp::parse(OpAsmParser &parser, OperationState &result) {
       parser.resolveOperands(inputsOperands, inputsTypes, inputsOperandsLoc,
                              result.operands) ||
       parser.parseArrow() ||
-      parseOutputPortList(parser, allResultTypes, resultNames) ||
-      parser.parseOptionalAttrDict(result.attributes)) {
+      parseOutputPortList(parser, allResultTypes, resultNames))
     return failure();
+
+  int32_t numScopes = 0;
+  if (succeeded(parser.parseOptionalKeyword("scope"))) {
+    // A graph region may use the scope before the `dbg.scope` op that loads
+    // the Debug dialect.
+    auto *context = parser.getContext();
+    context->getOrLoadDialect<debug::DebugDialect>();
+    OpAsmParser::UnresolvedOperand scope;
+    if (parser.parseOperand(scope) ||
+        parser.resolveOperand(scope, debug::ScopeType::get(context),
+                              result.operands))
+      return failure();
+    numScopes = 1;
   }
+
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return failure();
 
   result.addAttribute("argNames", argNames);
   result.addAttribute("resultNames", resultNames);
   result.addAttribute("parameters", parameters);
+  result.getOrAddProperties<Properties>().operandSegmentSizes = {
+      static_cast<int32_t>(inputsTypes.size()), numScopes};
   result.addTypes(allResultTypes);
   return success();
 }
@@ -1632,12 +1650,15 @@ void InstanceOp::print(OpAsmPrinter &p) {
                      getArgNames());
   p << " -> ";
   printOutputPortList(p, *this, getResultTypes(), getResultNames());
+  if (auto scope = getScope())
+    p << " scope " << scope;
 
   p.printOptionalAttrDict(
       (*this)->getAttrs(),
       /*elidedAttrs=*/{"instanceName",
                        InnerSymbolTable::getInnerSymbolAttrName(), "moduleName",
-                       "argNames", "resultNames", "parameters"});
+                       "argNames", "resultNames", "parameters",
+                       getOperandSegmentSizesAttrName()});
 }
 
 //===----------------------------------------------------------------------===//

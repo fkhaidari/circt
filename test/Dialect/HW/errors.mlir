@@ -410,7 +410,7 @@ hw.module.extern @submodule (out out0: i32)
 
 hw.module @wrongNumberOfResultNames() {
   // expected-error @+1 {{has a wrong number of results port labels; expected 1 but got 0}}
-  "hw.instance"() {instanceName="inst0", moduleName=@submodule, argNames=[], resultNames=[], parameters=[]} : () -> i32
+  "hw.instance"() {instanceName="inst0", moduleName=@submodule, argNames=[], resultNames=[], parameters=[], operandSegmentSizes = array<i32: 0, 0>} : () -> i32
 }
 
 // -----
@@ -420,7 +420,7 @@ hw.module.extern @submodule (in %arg0: i32)
 
 hw.module @wrongNumberOfInputNames(in %arg0: i32) {
   // expected-error @+1 {{has a wrong number of input port names; expected 1 but got 0}}
-  "hw.instance"(%arg0) {instanceName="inst0", moduleName=@submodule, argNames=[], resultNames=[], parameters=[]} : (i32) -> ()
+  "hw.instance"(%arg0) {instanceName="inst0", moduleName=@submodule, argNames=[], resultNames=[], parameters=[], operandSegmentSizes = array<i32: 1, 0>} : (i32) -> ()
 }
 
 // -----

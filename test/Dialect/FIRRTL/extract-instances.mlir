@@ -924,3 +924,50 @@ firrtl.circuit "ExtractSeqMemsWrapperInstanceName" attributes {
     firrtl.instance dut @DUTModule()
   }
 }
+
+//===----------------------------------------------------------------------===//
+// Debug scope of an extracted instance
+//===----------------------------------------------------------------------===//
+
+// The debug scope stays in the module the instance came from. The extracted
+// instance has no scope.
+// CHECK-LABEL: firrtl.circuit "ExtractScopedInstance"
+firrtl.circuit "ExtractScopedInstance" {
+  firrtl.extmodule @ScopedBBox() attributes {
+    annotations = [
+      {
+        class = "sifive.enterprise.firrtl.ExtractBlackBoxAnnotation",
+        filename = "BlackBoxes.txt",
+        prefix = "",
+        dest = "Extracted"
+      }
+    ],
+    defname = "blackbox"
+  }
+  // CHECK:       firrtl.module private @Sub()
+  // CHECK-NEXT:    dbg.scope "c", "C"
+  // CHECK-NEXT:  }
+  firrtl.module private @Sub() {
+    %0 = dbg.scope "c", "C"
+    firrtl.instance bbox @ScopedBBox() scope %0
+  }
+  // CHECK:       firrtl.module private @Extracted()
+  // CHECK-NEXT:    firrtl.instance bbox @ScopedBBox(){{$}}
+  // CHECK-NEXT:    firrtl.instance bbox @ScopedBBox(){{$}}
+  // CHECK-NEXT:  }
+  // CHECK:       firrtl.module private @DUTModule()
+  // CHECK-NEXT:    firrtl.instance Extracted
+  // CHECK-NEXT:    firrtl.instance sub {{.*}}@Sub()
+  // CHECK-NEXT:    dbg.scope "d", "D"
+  // CHECK-NEXT:  }
+  firrtl.module private @DUTModule() attributes {
+    annotations = [{class = "sifive.enterprise.firrtl.MarkDUTAnnotation"}]
+  } {
+    firrtl.instance sub @Sub()
+    %0 = dbg.scope "d", "D"
+    firrtl.instance bbox @ScopedBBox() scope %0
+  }
+  firrtl.module @ExtractScopedInstance() {
+    firrtl.instance dut @DUTModule()
+  }
+}

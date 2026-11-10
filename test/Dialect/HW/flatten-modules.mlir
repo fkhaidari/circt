@@ -90,3 +90,43 @@ hw.module private @ExtModuleB() {
   hw.instance "c1" @ExtModuleC() -> ()
 }
 hw.module.extern private @ExtModuleC()
+
+
+// Debug info of inlined modules is placed in a scope per inlined instance.
+// CHECK-LABEL: hw.module @DebugTop
+hw.module @DebugTop(in %x: i4, out y: i4) {
+  // CHECK-NEXT: dbg.variable "top_x", %x : i4
+  // CHECK-NEXT: %[[S0:.+]] = dbg.scope "mid", "DebugMid"{{$}}
+  // CHECK-NEXT: dbg.variable "mid_x", %x scope %[[S0]] : i4
+  // CHECK-NEXT: hw.instance "mid/deep" @DebugExt(a: %x: i4) -> () scope %[[S0]]
+  // CHECK-NEXT: %[[S1:.+]] = dbg.scope "leaf", "DebugLeaf" scope %[[S0]]
+  // CHECK-NEXT: dbg.variable "leaf_x", %x scope %[[S1]] : i4
+  dbg.variable "top_x", %x : i4
+  %0 = hw.instance "mid" @DebugMid(x: %x: i4) -> (y: i4)
+  hw.output %0 : i4
+}
+// CHECK-NOT: hw.module private @DebugMid
+hw.module private @DebugMid(in %x: i4, out y: i4) {
+  dbg.variable "mid_x", %x : i4
+  hw.instance "deep" @DebugExt(a: %x: i4) -> ()
+  %0 = hw.instance "leaf" @DebugLeaf(x: %x: i4) -> (y: i4)
+  hw.output %0 : i4
+}
+hw.module private @DebugLeaf(in %x: i4, out y: i4) {
+  dbg.variable "leaf_x", %x : i4
+  hw.output %x : i4
+}
+hw.module.extern private @DebugExt(in %a: i4)
+
+// An inlined instance that was already scoped nests its scope in the parent.
+// CHECK-LABEL: hw.module @DebugScoped
+hw.module @DebugScoped(in %x: i4) {
+  // CHECK: %[[P:.+]] = dbg.scope "p", "Other"
+  // CHECK: %[[C:.+]] = dbg.scope "c", "DebugLeafOnly" scope %[[P]]
+  // CHECK: dbg.variable "v", %x scope %[[C]] : i4
+  %p = dbg.scope "p", "Other"
+  hw.instance "c" @DebugLeafOnly(x: %x: i4) -> () scope %p
+}
+hw.module private @DebugLeafOnly(in %x: i4) {
+  dbg.variable "v", %x : i4
+}

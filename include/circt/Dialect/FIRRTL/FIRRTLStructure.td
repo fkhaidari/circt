@@ -193,6 +193,10 @@ def FExtModuleOp : FIRRTLModuleLike<"extmodule"> {
   let description = [{
     The "firrtl.extmodule" operation represents an external reference to a
     Verilog module, including a given name and a list of ports.
+
+    The optional `sourceName` is the source-language class of the module, for
+    debug info. It is set by `circt.DebugSourceNameAnnotation` and dropped by
+    `firrtl-lower-intrinsics` when debug info is off.
   }];
   let arguments = (ins
     SymbolNameAttr:$sym_name,
@@ -206,7 +210,8 @@ def FExtModuleOp : FIRRTLModuleLike<"extmodule"> {
     DefaultValuedAttr<AnnotationArrayAttr, "{}">:$annotations,
     DefaultValuedAttr<LayerArrayAttr, "{}">:$layers,
     DefaultValuedAttr<ArrayRefAttr, "{}">:$domainInfo,
-    DefaultValuedAttr<ArrayAttr, "{}">:$externalRequirements);
+    DefaultValuedAttr<ArrayAttr, "{}">:$externalRequirements,
+    OptionalAttr<StrAttr>:$sourceName);
   let results = (outs);
   let regions = (region AnyRegion:$body);
 

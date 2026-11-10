@@ -466,6 +466,33 @@ def BodyTypeLoweringAnnotation : SingleTargetAnnotation {
   let customHandler = "applyBodyTypeLoweringAnno";
 }
 
+def DebugSourceNameAnnotation : SingleTargetAnnotation {
+  let className = "circt.DebugSourceNameAnnotation";
+  let targets = [ExtModule];
+  let members = (ins
+    Doc<StringParam, "The source-language class name">:$name
+  );
+  let description = [{
+    Record the source-language class of an external module, for debug info.
+    The target must be a local extmodule. The name is stored in the
+    `sourceName` attribute of the extmodule and carried to `hw.module.extern`.
+    Debug info (`--emit-uhdi`) gives each instance of the extmodule this class.
+
+    Without `-g`, the name is dropped before Dedup, so it does not change the
+    output.
+
+    Example:
+    ```json
+    {
+      "class": "circt.DebugSourceNameAnnotation",
+      "target": "~Foo|BlackBox",
+      "name": "my.pkg.BlackBox"
+    }
+    ```
+  }];
+  let customHandler = "applyDebugSourceNameAnno";
+}
+
 //===----------------------------------------------------------------------===//
 // SiFive Enterprise Annotations
 //===----------------------------------------------------------------------===//

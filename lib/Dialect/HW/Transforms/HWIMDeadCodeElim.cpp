@@ -107,8 +107,8 @@ static InstanceOp cloneWithErasedPorts(InstanceOp &instance,
                                        const llvm::BitVector &outErasures) {
   assert(outErasures.size() >= instance->getNumResults() &&
          "out_erasures is not at least as large as getNumResults()");
-  assert(inErasures.size() >= instance->getNumOperands() &&
-         "in_erasures is not at least as large as getNumOperands()");
+  assert(inErasures.size() >= instance.getInputs().size() &&
+         "in_erasures is not at least as large as the number of inputs");
 
   // Restrict outputs
   SmallVector<Type> newResultTypes = removeElementsAtIndices<Type>(
@@ -122,8 +122,8 @@ static InstanceOp cloneWithErasedPorts(InstanceOp &instance,
 
   // Restrict inputs
   auto newOperands = removeElementsAtIndices<mlir::Value>(
-      SmallVector<mlir::Value>(instance->getOperands().begin(),
-                               instance->getOperands().end()),
+      SmallVector<mlir::Value>(instance.getInputs().begin(),
+                               instance.getInputs().end()),
       inErasures);
   auto newOperandNames = removeElementsAtIndices<mlir::Attribute>(
       SmallVector<mlir::Attribute>(instance.getArgNames().begin(),
@@ -138,8 +138,8 @@ static InstanceOp cloneWithErasedPorts(InstanceOp &instance,
   auto newInstance = InstanceOp::create(
       builder, instance->getLoc(), newResultTypes,
       instance.getInstanceNameAttr(), instance.getModuleName(), newOperands,
-      newOpNamesArrayAttr, newResultNamesArrayAttr, instance.getParameters(),
-      instance.getInnerSymAttr());
+      instance.getScope(), newOpNamesArrayAttr, newResultNamesArrayAttr,
+      instance.getParameters(), instance.getInnerSymAttr());
 
   return newInstance;
 }
@@ -195,7 +195,7 @@ void HWIMDeadCodeElim::markInstanceLike(HWInstanceLike instanceLike) {
     // alive.
     // Inputs are exactly what are passed into the module.
     if (!isa<HWModuleOp>(op.getOperation())) {
-      for (auto operand : instanceLike->getOperands())
+      for (auto operand : instanceLike.getInputs())
         markAlive(operand);
 
       markAlive(instanceLike);
@@ -261,7 +261,7 @@ void HWIMDeadCodeElim::visitInstanceLike(HWInstanceLike instanceLike) {
         auto portIndex = blockArg.getArgNumber();
 
         if (isKnownAlive(blockArg))
-          markAlive(instanceLike->getOperand(portIndex));
+          markAlive(instanceLike.getInputs()[portIndex]);
       }
 
       continue;
@@ -298,7 +298,7 @@ void HWIMDeadCodeElim::visitValue(Value value) {
         if (auto instance = dyn_cast<HWInstanceLike>(
                 instRec->getInstance().getOperation())) {
           if (liveElements.contains(instance))
-            markAlive(instance->getOperand(blockArg.getArgNumber()));
+            markAlive(instance.getInputs()[blockArg.getArgNumber()]);
         }
       }
     }

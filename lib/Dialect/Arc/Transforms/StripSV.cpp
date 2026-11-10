@@ -185,8 +185,8 @@ void StripSVPass::runOnOperation() {
         ImplicitLocOpBuilder builder(instOp.getLoc(), instOp);
         if (clockGateModuleNames.contains(modName)) {
           auto gated = seq::ClockGateOp::create(
-              builder, instOp.getOperand(0), instOp.getOperand(1),
-              instOp.getOperand(2), hw::InnerSymAttr{});
+              builder, instOp.getInputs()[0], instOp.getInputs()[1],
+              instOp.getInputs()[2], hw::InnerSymAttr{});
           instOp.replaceAllUsesWith(gated);
           opsToDelete.push_back(instOp);
         }

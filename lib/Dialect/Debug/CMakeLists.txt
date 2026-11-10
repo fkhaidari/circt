@@ -8,6 +8,7 @@ add_circt_dialect_library(CIRCTDebug
 
   DEPENDS
   MLIRDebugIncGen
+  CIRCTDebugEnumsIncGen
 
   LINK_COMPONENTS
   Support

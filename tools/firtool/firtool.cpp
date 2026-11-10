@@ -253,6 +253,11 @@ static cl::opt<bool> hglddOnlyExistingFileLocs(
     cl::desc("Only consider locations in files that exist on disk"),
     cl::init(false), cl::cat(mainCategory));
 
+static cl::opt<std::string>
+    uhdiOutputFile("emit-uhdi", cl::desc("Emit UHDI debug info into a file"),
+                   cl::init(""), cl::value_desc("filename"),
+                   cl::cat(mainCategory));
+
 static cl::opt<bool>
     emitBytecode("emit-bytecode",
                  cl::desc("Emit bytecode when generating MLIR output"),
@@ -361,6 +366,28 @@ struct EmitSplitHGLDDPass
     markAllAnalysesPreserved();
     if (failed(debug::emitSplitHGLDD(getOperation(), getHGLDDOptions())))
       return signalPassFailure();
+  }
+};
+
+/// Wrapper pass to call the `emitUHDI` translation.
+struct EmitUHDIPass
+    : public PassWrapper<EmitUHDIPass, OperationPass<mlir::ModuleOp>> {
+  std::string outputFile;
+  std::string netlistFile;
+  EmitUHDIPass(StringRef outputFile, StringRef netlistFile)
+      : outputFile(outputFile), netlistFile(netlistFile) {}
+  void runOnOperation() override {
+    markAllAnalysesPreserved();
+    std::string error;
+    auto file = openOutputFile(outputFile, &error);
+    if (!file) {
+      errs() << error;
+      return signalPassFailure();
+    }
+    if (failed(debug::emitUHDI(getOperation(), file->os(), /*indent=*/2,
+                               netlistFile)))
+      return signalPassFailure();
+    file->keep();
   }
 };
 
@@ -530,9 +557,9 @@ static LogicalResult processBuffer(
         return failure();
   }
 
-  // If the user requested HGLDD debug info emission, enable Verilog location
-  // tracking.
-  if (emitHGLDD)
+  // If the user requested HGLDD or UHDI debug info emission, enable Verilog
+  // location tracking.
+  if (emitHGLDD || !uhdiOutputFile.empty())
     loweringOptions.emitVerilogLocations = true;
 
   // Load the emitter options from the command line. Command line options if
@@ -568,6 +595,16 @@ static LogicalResult processBuffer(
                                                 llvm::nulls())))
         return failure();
       break;
+    }
+
+    // UHDI reads the names that ExportVerilog settled on. A single Verilog
+    // file leaves its locations without a file name; name it after `-o`.
+    if (!uhdiOutputFile.empty()) {
+      StringRef netlistFile;
+      if (outputFormat == OutputVerilog &&
+          !firtoolOptions.isDefaultOutputFilename())
+        netlistFile = firtoolOptions.getOutputFilename();
+      pm.addPass(std::make_unique<EmitUHDIPass>(uhdiOutputFile, netlistFile));
     }
 
     // If requested, print the final MLIR into mlirOutFile.

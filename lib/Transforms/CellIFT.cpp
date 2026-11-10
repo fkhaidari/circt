@@ -579,9 +579,9 @@ void instrumentInstance(TaintMap &taintOf, PendingTaintMap &pendingTaints,
 
   auto newInst = hw::InstanceOp::create(
       b, op.getLoc(), newResTys, op.getInstanceNameAttr(),
-      op.getModuleNameAttr(), newInputs, b.getArrayAttr(newArgNames),
-      b.getArrayAttr(newResNames), op.getParametersAttr(), op.getInnerSymAttr(),
-      op.getDoNotPrintAttr());
+      op.getModuleNameAttr(), newInputs, op.getScope(),
+      b.getArrayAttr(newArgNames), b.getArrayAttr(newResNames),
+      op.getParametersAttr(), op.getInnerSymAttr(), op.getDoNotPrintAttr());
 
   unsigned newResIdx = 0;
   for (auto result : op.getResults()) {

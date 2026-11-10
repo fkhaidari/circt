@@ -39,14 +39,24 @@ LogicalResult firtool::populatePreprocessTransforms(mlir::PassManager &pm,
        /*ignoreAnnotationUnknown=*/opt.shouldDisableUnknownAnnotations(),
        /*noRefTypePorts=*/opt.shouldLowerNoRefTypePortAnnotations()}));
 
-  if (opt.shouldEnableDebugInfo())
-    pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
-        firrtl::createMaterializeDebugInfo());
-
   pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerIntmodules(
       {/*fixupEICGWrapper=*/opt.shouldFixupEICGWrapper()}));
   pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
-      firrtl::createLowerIntrinsics());
+      firrtl::createLowerIntrinsics(
+          {/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
+  // `firrtl.class` is not an FModuleOp, so it needs its own nest. Debug
+  // intrinsics in class bodies are only erased, with a warning under -g.
+  pm.nest<firrtl::CircuitOp>().nest<firrtl::ClassOp>().addPass(
+      firrtl::createLowerIntrinsics(
+          {/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
+  // Without -g, the source class names of extmodules are dropped before Dedup.
+  if (!opt.shouldEnableDebugInfo())
+    pm.nest<firrtl::CircuitOp>().nest<firrtl::FExtModuleOp>().addPass(
+        firrtl::createLowerIntrinsics({/*emitDebugInfo=*/false}));
+
+  if (opt.shouldEnableDebugInfo())
+    pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
+        firrtl::createMaterializeDebugInfo());
 
   return success();
 }
@@ -155,7 +165,8 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
   if (opt.shouldConvertProbesToSignals())
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createProbesToSignals());
 
-  pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInliner());
+  pm.nest<firrtl::CircuitOp>().addPass(
+      firrtl::createInliner({/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
 
   pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
       firrtl::createLayerMerge());
@@ -223,7 +234,8 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
     if (opt.shouldInlineInputOnlyModules()) {
       pm.nest<firrtl::CircuitOp>().addPass(
           firrtl::createAnnotateInputOnlyModules());
-      pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInliner());
+      pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInliner(
+          {/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
       pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
           createSimpleCanonicalizerPass());
     }

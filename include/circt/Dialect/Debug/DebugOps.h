@@ -17,6 +17,9 @@
 #include "circt/Dialect/Debug/DebugDialect.h"
 #include "circt/Dialect/Debug/DebugTypes.h"
 
+// Enum definitions generated from `DebugOps.td`
+#include "circt/Dialect/Debug/DebugEnums.h.inc"
+
 // Operation definitions generated from `Debug.td`
 #define GET_OP_CLASSES
 #include "circt/Dialect/Debug/Debug.h.inc"

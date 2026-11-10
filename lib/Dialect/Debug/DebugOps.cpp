@@ -79,6 +79,14 @@ void StructOp::print(OpAsmPrinter &printer) {
   }
 }
 
+LogicalResult StructOp::verify() {
+  if (auto flips = getFlips(); flips && flips->size() != getFields().size())
+    return emitOpError("number of flips (")
+           << flips->size() << ") and fields (" << getFields().size()
+           << ") must match";
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ArrayOp
 //===----------------------------------------------------------------------===//
@@ -119,6 +127,8 @@ void ArrayOp::print(OpAsmPrinter &printer) {
 //===----------------------------------------------------------------------===//
 // Generated operation code
 //===----------------------------------------------------------------------===//
+#include "circt/Dialect/Debug/DebugEnums.cpp.inc"
+
 #define GET_OP_CLASSES
 #include "circt/Dialect/Debug/Debug.cpp.inc"
 
