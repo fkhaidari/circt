@@ -94,8 +94,11 @@ void DebugInfoBuilder::visitModule(hw::HWModuleOp moduleOp, DIModule &module) {
   bool hasVariables = false;
   bool hasInstances = false;
   moduleOp.walk([&](Operation *op) {
-    if (isa<debug::VariableOp>(op))
-      hasVariables = true;
+    if (auto variable = dyn_cast<debug::VariableOp>(op)) {
+      auto value = variable.getValue().getDefiningOp<debug::ValueOp>();
+      if (!value || !value.getPathAttr())
+        hasVariables = true;
+    }
     if (auto scopeOp = dyn_cast<debug::ScopeOp>(op)) {
       auto *node = createModule();
       node->isInline = true;
@@ -140,6 +143,9 @@ void DebugInfoBuilder::visitModule(hw::HWModuleOp moduleOp, DIModule &module) {
   // Fill in any missing DI as a fallback.
   moduleOp->walk([&](Operation *op) {
     if (auto varOp = dyn_cast<debug::VariableOp>(op)) {
+      if (auto value = varOp.getValue().getDefiningOp<debug::ValueOp>())
+        if (value.getPathAttr())
+          return;
       auto *var = createVariable();
       var->name = varOp.getNameAttr();
       var->loc = varOp.getLoc();
