@@ -3,6 +3,9 @@
 This dialect provides operations and types to interleave debug information (DI)
 with other parts of the IR.
 
+The [UHDI rationale](RationaleUHDI.md) covers how a frontend describes
+source-level debug info and how CIRCT carries it to the emitted netlist.
+
 [TOC]
 
 
@@ -166,9 +169,10 @@ the original instance, and group all debug variables in `Bar` under this
 explicit scope:
 
 ```
+dbg.module @BarDebug type "Bar"
 hw.module @Foo(in %a: i42) {
   dbg.variable "a", %a : i42
-  %0 = dbg.scope "bar", "Bar"
+  %0 = dbg.scope "bar" def @BarDebug
   dbg.variable "x", %a scope %0 : i42
   %1 = comb.mul %a, %a : i42
   dbg.variable "squared", %1 scope %0 : i42
