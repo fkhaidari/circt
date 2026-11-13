@@ -31,7 +31,7 @@ func.func @test_bmc_debug_names() -> i1 {
   }
   circuit {
   ^bb0(%clk: !seq.clock, %arg0: i8, %state0: i8):
-    %scope = dbg.scope "Top", "Top"
+    %scope = dbg.scope "Top"
     dbg.variable "data_in", %arg0 scope %scope : i8
     dbg.variable "state_q", %state0 scope %scope : i8
     %true = hw.constant true
@@ -76,7 +76,7 @@ func.func @test_bmc_debug_names_extra_loop_state() -> i1 {
   }
   circuit {
   ^bb0(%clk: !seq.clock, %arg0: i8, %state0: i8, %state1: i8):
-    %scope = dbg.scope "Top", "Top"
+    %scope = dbg.scope "Top"
     dbg.variable "data_in", %arg0 scope %scope : i8
     dbg.variable "state_q", %state0 scope %scope : i8
     dbg.variable "state_r", %state1 scope %scope : i8
@@ -114,7 +114,7 @@ func.func @test_bmc_debug_names_const_init() -> i1 {
   }
   circuit {
   ^bb0(%clk: !seq.clock, %arg0: i8, %state0: i8):
-    %scope = dbg.scope "Top", "Top"
+    %scope = dbg.scope "Top"
     dbg.variable "data_in", %arg0 scope %scope : i8
     dbg.variable "state_q", %state0 scope %scope : i8
     %true = hw.constant true

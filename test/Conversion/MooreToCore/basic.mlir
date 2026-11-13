@@ -1372,7 +1372,7 @@ moore.module @NoPredecessorBlockErasure(in %clk_i : !moore.l1, in %raddr_i : !mo
 // CHECK: dbg.variable "a", [[TMP]] : i32
 dbg.variable "a", %dbg0 : !moore.l32
 // CHECK: [[SCOPE:%.+]] = dbg.scope
-%dbg1 = dbg.scope "foo", "bar"
+%dbg1 = dbg.scope "foo"
 // CHECK: dbg.variable "b", [[TMP]] scope [[SCOPE]] : i32
 dbg.variable "b", %dbg0 scope %dbg1 : !moore.l32
 // CHECK: dbg.array [[[TMP]]] : i32

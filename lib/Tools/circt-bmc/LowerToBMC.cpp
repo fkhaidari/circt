@@ -199,20 +199,21 @@ void LowerToBMCPass::runOnOperation() {
     }
   }
   auto moduleName = hwModule.getNameAttr();
+  auto definition = debug::getModuleDescription(hwModule);
+  if (!definition && !namedPorts.empty())
+    definition = debug::getOrCreateModuleDescription(hwModule, moduleName);
+  if (definition)
+    definition.removeImplAttr();
   bmcOp.getCircuit().takeBody(hwModule.getBody());
   hwModule->erase();
 
   // signal names for counter-example generation.
-  {
+  if (!namedPorts.empty()) {
     OpBuilder::InsertionGuard guard(builder);
     auto &circuitBlock = bmcOp.getCircuit().front();
     builder.setInsertionPoint(circuitBlock.getTerminator());
-    auto scope = debug::ScopeOp::create(
-        builder, loc, moduleName.getValue(),
-        // TODO: Hierarchy support would require walking parent InstanceOps,
-        // but LowerToBMC operates on a single top-level module with no
-        // instance context available at this point.
-        moduleName, nullptr);
+    auto scope = debug::ScopeOp::create(builder, loc, moduleName, Value());
+    scope.setDefAttr(FlatSymbolRefAttr::get(definition.getSymNameAttr()));
     for (auto &[name, value] : namedPorts)
       debug::VariableOp::create(builder, loc, name, value, scope);
   }

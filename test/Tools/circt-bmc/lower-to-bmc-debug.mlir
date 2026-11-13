@@ -6,7 +6,7 @@
 // RUN: circt-bmc %s --module=Aggregate -b=2 --emit-llvm | FileCheck %s --check-prefix=AGGREGATE-LLVM
 
 // SIMPLE: ^bb0([[IN:%.+]]: i8):
-// SIMPLE: [[SCOPE:%.+]] = dbg.scope "Simple", "Simple"
+// SIMPLE: [[SCOPE:%.+]] = dbg.scope "Simple"
 // SIMPLE-DAG: dbg.variable "in", [[IN]] scope [[SCOPE]] : i8
 // SIMPLE-DAG: dbg.variable "out", [[IN]] scope [[SCOPE]] : i8
 
@@ -16,7 +16,7 @@ hw.module @Simple(in %in: i8, out out: i8) attributes {num_regs = 0 : i32, initi
 
 // PASSTHROUGH: ^bb0([[A:%.+]]: i4, [[B:%.+]]: i4):
 // PASSTHROUGH: [[SUM:%.+]] = comb.add [[A]], [[B]] : i4
-// PASSTHROUGH: [[SCOPE:%.+]] = dbg.scope "Passthrough", "Passthrough"
+// PASSTHROUGH: [[SCOPE:%.+]] = dbg.scope "Passthrough"
 // PASSTHROUGH-DAG: dbg.variable "a", [[A]] scope [[SCOPE]] : i4
 // PASSTHROUGH-DAG: dbg.variable "b", [[B]] scope [[SCOPE]] : i4
 // PASSTHROUGH-DAG: dbg.variable "sum", [[SUM]] scope [[SCOPE]] : i4

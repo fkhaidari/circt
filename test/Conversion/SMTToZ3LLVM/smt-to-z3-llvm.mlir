@@ -427,7 +427,7 @@ func.func @test(%arg0: i32) {
 
     // CHECK-NOT: dbg.scope
     // CHECK-NOT: dbg.variable
-    %scope = dbg.scope "a", "A"
+    %scope = dbg.scope "a"
     dbg.variable "var2", %true scope %scope : !smt.bool
 
     // CHECK: [[C0:%.+]] = llvm.mlir.constant(0 : i32)

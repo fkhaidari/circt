@@ -1613,7 +1613,8 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
     return updateDebugScope(scopeOp), false;
 
   // Prefix the "name" attribute, when present.
-  if (auto nameAttr = op->getAttrOfType<StringAttr>("name"))
+  if (auto nameAttr = op->getAttrOfType<StringAttr>("name");
+      nameAttr && !isa<debug::ScopeOp>(op))
     op->setAttr("name", StringAttr::get(op->getContext(),
                                         (prefix + nameAttr.getValue())));
 
@@ -2078,7 +2079,7 @@ void Inliner::createDebugScope(InliningLevel &il, InstanceOp instance,
                                Value parentScope) {
   auto op = debug::ScopeOp::create(
       il.mic.b, instance.getLoc(), instance.getInstanceNameAttr(),
-      instance.getModuleNameAttr().getAttr(), parentScope);
+      parentScope);
   debugScopes.push_back(op);
   il.debugScope = op;
 }

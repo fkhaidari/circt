@@ -56,10 +56,11 @@ hw.module @Aggregates(in %data_a: i32, in %data_b: index, in %data_c_0: i17, in 
 // CHECK:         Module "InnerModule" for dbg.scope
 // CHECK:           Variable "b"
 // CHECK-NEXT:        Result 0 of comb.mul of type i42
+dbg.module @InnerDebug type "InnerModule"
 hw.module @InlineScopes(in %a: i42) {
   dbg.variable "a", %a : i42
   %0 = comb.mul %a, %a : i42
-  %1 = dbg.scope "inner", "InnerModule"
+  %1 = dbg.scope "inner" def @InnerDebug
   dbg.variable "b", %0 scope %1 : i42
 }
 
@@ -69,8 +70,18 @@ hw.module @InlineScopes(in %a: i42) {
 // CHECK:           Instance "bar" of "Bar" for dbg.scope
 // CHECK:             Module "Bar" for dbg.scope
 // CHECK:               Variable "a"
+dbg.module @FooDebug type "Foo"
+dbg.module @BarDebug type "Bar"
 hw.module @NestedScopes(in %a: i42) {
-  %0 = dbg.scope "foo", "Foo"
-  %1 = dbg.scope "bar", "Bar" scope %0
+  %0 = dbg.scope "foo" def @FooDebug
+  %1 = dbg.scope "bar" scope %0 def @BarDebug
   dbg.variable "a", %a scope %1 : i42
+}
+
+// CHECK-LABEL: Module "LexicalScope" for hw.module
+// CHECK: Instance "block" of "block" for dbg.scope
+// CHECK: Module "block" for dbg.scope
+hw.module @LexicalScope(in %a: i8) {
+  %scope = dbg.scope "block"
+  dbg.variable "a", %a scope %scope : i8
 }

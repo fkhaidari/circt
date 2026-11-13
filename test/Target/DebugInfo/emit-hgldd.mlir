@@ -476,9 +476,11 @@ hw.module.extern @Dummy() attributes {verilogName = "CustomDummy"}
 // CHECK:           "port_vars"
 // CHECK:             "var_name": "z"
 // CHECK:             "value": {"sig_name":"a"}
+dbg.module @ChildDebug type "InlinedChild"
+dbg.module @MoreDebug type "InlinedMore"
 hw.module @InlineScopes(in %a: i42) {
-  %1 = dbg.scope "child", "InlinedChild"
-  %2 = dbg.scope "more", "InlinedMore" scope %1
+  %1 = dbg.scope "child" def @ChildDebug
+  %2 = dbg.scope "more" scope %1 def @MoreDebug
   dbg.variable "x", %a : i42
   dbg.variable "y", %a scope %1 : i42
   dbg.variable "z", %a scope %2 : i42
@@ -572,5 +574,5 @@ hw.module @Issue6749(in %a: i42) {
   // Scopes with empty names must have a non-empty name in the output.
   // CHECK: "children": [
   // CHECK-NOT: "name": ""
-  %scope = dbg.scope "", "SomeScope"
+  %scope = dbg.scope ""
 }

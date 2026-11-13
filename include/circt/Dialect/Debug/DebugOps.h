@@ -11,14 +11,27 @@
 
 #include "mlir/Bytecode/BytecodeOpInterface.h"
 #include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 #include "circt/Dialect/Debug/DebugDialect.h"
 #include "circt/Dialect/Debug/DebugTypes.h"
+#include "circt/Dialect/HW/HWAttributes.h"
+#include "circt/Dialect/HW/HWOpInterfaces.h"
+
+// Enum definitions generated from `DebugOps.td`
+#include "circt/Dialect/Debug/DebugEnums.h.inc"
 
 // Operation definitions generated from `Debug.td`
 #define GET_OP_CLASSES
 #include "circt/Dialect/Debug/Debug.h.inc"
+
+namespace circt::debug {
+ModuleInfoOp getModuleDescription(mlir::Operation *module);
+ModuleInfoOp getOrCreateModuleDescription(mlir::Operation *module,
+                                          mlir::StringAttr typeName,
+                                          mlir::StringAttr ext = {});
+} // namespace circt::debug
 
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_H

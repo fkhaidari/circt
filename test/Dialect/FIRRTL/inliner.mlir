@@ -843,10 +843,10 @@ firrtl.circuit "CollidingSymbolsMultiInline" {
 firrtl.circuit "TrackInliningInDebugInfo" {
   // CHECK: firrtl.module @TrackInliningInDebugInfo
   firrtl.module @TrackInliningInDebugInfo() {
-    // CHECK: [[SCOPE_FOO:%.+]] = dbg.scope "foo", "Foo"
-    // CHECK: [[SCOPE_BAR:%.+]] = dbg.scope "bar", "Bar" scope [[SCOPE_FOO]]
+    // CHECK: [[SCOPE_FOO:%.+]] = dbg.scope "foo"
+    // CHECK: [[SCOPE_BAR:%.+]] = dbg.scope "bar" scope [[SCOPE_FOO]]
     // CHECK: dbg.variable "a", {{%.+}} scope [[SCOPE_BAR]]
-    // CHECK: [[SCOPE_IMPL:%.+]] = dbg.scope "impl", "Bugu" scope [[SCOPE_BAR]]
+    // CHECK: [[SCOPE_IMPL:%.+]] = dbg.scope "impl" scope [[SCOPE_BAR]]
     // CHECK: dbg.variable "b", {{%.+}} scope [[SCOPE_IMPL]]
     firrtl.instance foo @Foo()
   }
@@ -859,7 +859,7 @@ firrtl.circuit "TrackInliningInDebugInfo" {
     %wire = firrtl.wire : !firrtl.uint<1>
     dbg.variable "a", %wire : !firrtl.uint<1>
     firrtl.when %wire : !firrtl.uint<1> {
-      %0 = dbg.scope "impl", "Bugu"
+      %0 = dbg.scope "impl"
       dbg.variable "b", %wire scope %0 : !firrtl.uint<1>
     }
   }
@@ -869,10 +869,10 @@ firrtl.circuit "TrackInliningInDebugInfo" {
 firrtl.circuit "TrackFlatteningInDebugInfo" {
   // CHECK: firrtl.module @TrackFlatteningInDebugInfo
   firrtl.module @TrackFlatteningInDebugInfo() attributes {annotations = [{class = "firrtl.transforms.FlattenAnnotation"}]} {
-    // CHECK: [[SCOPE_FOO:%.+]] = dbg.scope "foo", "Foo"
-    // CHECK: [[SCOPE_BAR:%.+]] = dbg.scope "bar", "Bar" scope [[SCOPE_FOO]]
+    // CHECK: [[SCOPE_FOO:%.+]] = dbg.scope "foo"
+    // CHECK: [[SCOPE_BAR:%.+]] = dbg.scope "bar" scope [[SCOPE_FOO]]
     // CHECK: dbg.variable "a", {{%.+}} scope [[SCOPE_BAR]]
-    // CHECK: [[SCOPE_IMPL:%.+]] = dbg.scope "impl", "Bugu" scope [[SCOPE_BAR]]
+    // CHECK: [[SCOPE_IMPL:%.+]] = dbg.scope "impl" scope [[SCOPE_BAR]]
     // CHECK: dbg.variable "b", {{%.+}} scope [[SCOPE_IMPL]]
     firrtl.instance foo @Foo()
   }
@@ -885,7 +885,7 @@ firrtl.circuit "TrackFlatteningInDebugInfo" {
     %wire = firrtl.wire : !firrtl.uint<1>
     dbg.variable "a", %wire : !firrtl.uint<1>
     firrtl.when %wire : !firrtl.uint<1> {
-      %0 = dbg.scope "impl", "Bugu"
+      %0 = dbg.scope "impl"
       dbg.variable "b", %wire scope %0 : !firrtl.uint<1>
     }
   }

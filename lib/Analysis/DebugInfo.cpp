@@ -99,7 +99,12 @@ void DebugInfoBuilder::visitModule(hw::HWModuleOp moduleOp, DIModule &module) {
     if (auto scopeOp = dyn_cast<debug::ScopeOp>(op)) {
       auto *node = createModule();
       node->isInline = true;
-      node->name = scopeOp.getModuleNameAttr();
+      node->name = scopeOp.getNameAttr();
+      if (auto definition = scopeOp.getDefAttr())
+        if (auto info =
+                SymbolTable::lookupNearestSymbolFrom<debug::ModuleInfoOp>(
+                    scopeOp, definition))
+          node->name = info.getTypeAttr();
       node->op = scopeOp;
       scopes.insert({scopeOp, node});
     }
@@ -145,7 +150,7 @@ void DebugInfoBuilder::visitModule(hw::HWModuleOp moduleOp, DIModule &module) {
 
     if (auto scopeOp = dyn_cast<debug::ScopeOp>(op)) {
       auto *instance = createInstance();
-      instance->name = scopeOp.getInstanceNameAttr();
+      instance->name = scopeOp.getNameAttr();
       instance->op = scopeOp;
       instance->module = scopes.lookup(scopeOp);
       getScope(scopeOp.getScope()).instances.push_back(instance);

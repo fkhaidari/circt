@@ -7,12 +7,15 @@
 // CHECK-LABEL: func.func @EnumAndVariable
 func.func @EnumAndVariable() {
   %c = arith.constant 0 : i2
-  // CHECK: %[[E:.+]] = dbg.enum %{{.*}}, "MyState", {Idle = 0 : i64, Run = 1 : i64} fqn "pkg.MyState$" : i2
-  %e = dbg.enum %c, "MyState", {Idle = 0 : i64, Run = 1 : i64} fqn "pkg.MyState$" : i2
-  // CHECK: %[[V:.+]] = dbg.value %[[E]] typeName "MyState" : !dbg.enum
-  %v = dbg.value %e typeName "MyState" : !dbg.enum
+  // CHECK: %[[E:.+]] = dbg.enum %{{.*}}, "MyState", {Idle = 0 : i64, Run = 1 : i64} : i2
+  %e = dbg.enum %c, "MyState", {Idle = 0 : i64, Run = 1 : i64} : i2
+  // CHECK: %[[V:.+]] = dbg.value %[[E]] type "MyState" : !dbg.enum
+  %v = dbg.value %e type "MyState" : !dbg.enum
   // CHECK: dbg.variable "state", %[[V]] : !dbg.value
   dbg.variable "state", %v : !dbg.value
+  // CHECK: dbg.value %[[E]] type "MyState" ext "{}" : !dbg.enum
+  %w = dbg.value %e type "MyState" ext "{}" : !dbg.enum
+  dbg.variable "state2", %w : !dbg.value
   return
 }
 
