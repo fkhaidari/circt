@@ -2373,8 +2373,7 @@ private:
 
   /// Emit braced list of values surrounded by `{` and `}`.
   void emitBracedList(ValueRange ops) {
-    return emitBracedList(
-        ops, [&]() { ps << "{"; }, [&]() { ps << "}"; });
+    return emitBracedList(ops, [&]() { ps << "{"; }, [&]() { ps << "}"; });
   }
 
   /// Print an APInt constant.
@@ -7290,6 +7289,8 @@ void SharedEmitterState::gatherFiles(bool separateModules) {
           // Constant ops might reference symbols, skip them.
         })
         .Default([&](auto *) {
+          if (isa<debug::DebugDialect>(op.getDialect()))
+            return;
           op.emitError("unknown operation (SharedEmitterState::gatherFiles)");
           encounteredError = true;
         });

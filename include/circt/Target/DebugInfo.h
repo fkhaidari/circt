@@ -56,6 +56,15 @@ LogicalResult emitHGLDD(Operation *module, llvm::raw_ostream &os,
 LogicalResult emitSplitHGLDD(Operation *module,
                              const EmitHGLDDOptions &options = {});
 
+/// Serialize the debug information in the given `module` into the UHDI format
+/// and write it to `os`. Signal names come from `hw.verilogName` and the
+/// Verilog names of ports, so run `ExportVerilog` on `module` first. `indent`
+/// is the JSON indent; 0 writes the document on one line. `netlistFile` is the
+/// path of emitted locations that have no file name, as single-file
+/// `ExportVerilog` leaves them.
+LogicalResult emitUHDI(Operation *module, llvm::raw_ostream &os,
+                       unsigned indent = 2, StringRef netlistFile = "");
+
 } // namespace debug
 } // namespace circt
 
