@@ -924,3 +924,59 @@ firrtl.circuit "ExtractSeqMemsWrapperInstanceName" attributes {
     firrtl.instance dut @DUTModule()
   }
 }
+
+//===----------------------------------------------------------------------===//
+// Debug scope of an extracted instance
+//===----------------------------------------------------------------------===//
+
+// Extraction preserves source scopes and points descriptions through the wrapper.
+// CHECK-LABEL: firrtl.circuit "ExtractScopedInstance"
+firrtl.circuit "ExtractScopedInstance" {
+  // CHECK: hw.hierpath private @debug_DUTModule_bbox [@DUTModule::@Extracted, @Extracted::@bbox]
+  hw.hierpath private @debug_DUTModule_bbox [@DUTModule::@bbox]
+  hw.hierpath private @debug_Sub_bbox [@Sub::@bbox]
+  firrtl.extmodule @ScopedBBox() attributes {
+    annotations = [
+      {
+        class = "sifive.enterprise.firrtl.ExtractBlackBoxAnnotation",
+        filename = "BlackBoxes.txt",
+        prefix = "",
+        dest = "Extracted"
+      }
+    ],
+    defname = "blackbox"
+  }
+  firrtl.module private @Sub() {
+    %0 = dbg.scope "c"
+    %description = dbg.value path @debug_Sub_bbox type "ScopedBBox"
+    dbg.variable "bbox", %description scope %0 : !dbg.value
+    firrtl.instance bbox sym @bbox @ScopedBBox()
+  }
+  firrtl.module private @DUTModule() attributes {
+    annotations = [{class = "sifive.enterprise.firrtl.MarkDUTAnnotation"}]
+  } {
+    firrtl.instance sub @Sub()
+    %0 = dbg.scope "d"
+    %description = dbg.value path @debug_DUTModule_bbox type "ScopedBBox"
+    dbg.variable "bbox", %description scope %0 : !dbg.value
+    firrtl.instance bbox sym @bbox @ScopedBBox()
+  }
+  firrtl.module @ExtractScopedInstance() {
+    firrtl.instance dut @DUTModule()
+  }
+}
+// CHECK-LABEL: firrtl.module private @Sub()
+// CHECK: dbg.scope "c"
+// CHECK-NOT: firrtl.instance
+// CHECK-LABEL: firrtl.module private @Extracted()
+// CHECK: firrtl.instance bbox sym @bbox @ScopedBBox()
+// CHECK: firrtl.instance bbox sym @bbox_0 @ScopedBBox()
+// CHECK-LABEL: firrtl.module private @DUTModule()
+// CHECK: dbg.scope "sub"
+// CHECK: dbg.scope "c" scope {{.*}}
+// CHECK: dbg.value path @{{.*}} type "ScopedBBox"
+// CHECK: dbg.variable "bbox", {{.*}} scope
+// CHECK: dbg.scope "d"
+// CHECK: dbg.value path @{{.*}} type "ScopedBBox"
+// CHECK: dbg.variable "bbox", {{.*}} scope
+// CHECK: hw.hierpath private @debug_extracted{{.*}} [@DUTModule::@Extracted, @Extracted::@bbox_0]

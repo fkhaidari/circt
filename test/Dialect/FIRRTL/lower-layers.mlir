@@ -1,3 +1,5 @@
+// RUN: circt-opt -firrtl-lower-layers -split-input-file %s | FileCheck %s --check-prefix=META
+  // META-DAG: dbg.module @{{[^ ]+}} type "M"
 // RUN: circt-opt -firrtl-lower-layers -split-input-file %s | FileCheck %s
 
 // CHECK-LABEL: firrtl.circuit "Test"
@@ -1196,4 +1198,38 @@ firrtl.circuit "DoNotIncludeDummyBindfiles" {
   // CHECK-NOT: sv.include local "layers-Child1-A.sv"
   // CHECK: sv.include local "layers-Child2-A.sv"
   // CHECK-NOT: sv.include local "layers-Child1-A.sv"
+}
+
+// -----
+
+// Check the cloning of debug scopes defined outside the layer block.
+// CHECK-LABEL: firrtl.circuit "DebugScope"
+firrtl.circuit "DebugScope" {
+  hw.hierpath private @debug_DebugScope_x [@DebugScope::@x]
+  firrtl.layer @A bind {}
+  firrtl.module private @Leaf() {}
+
+  // CHECK:      firrtl.module private @DebugScope_A() {
+  // CHECK-NEXT:   [[C:%.+]] = dbg.scope "c"
+  // CHECK-NEXT:   [[E:%.+]] = dbg.scope "e" scope [[C]]
+  // CHECK-NEXT:   [[A:%.+]] = firrtl.xmr.deref
+  // CHECK-NEXT:   dbg.variable "v", [[A]] scope [[E]] : !firrtl.uint<1>
+  // CHECK-NEXT:   [[D:%.+]] = dbg.scope "d" scope [[C]]
+  // CHECK:   firrtl.instance x{{.*}} @Leaf()
+  // CHECK-NEXT:   dbg.variable "w", [[A]] scope [[D]] : !firrtl.uint<1>
+  // CHECK-NEXT: }
+  dbg.module @debug1 type "M"
+  firrtl.module @DebugScope(in %a: !firrtl.uint<1>) {
+    %0 = dbg.scope "c" def @debug1
+    %1 = dbg.scope "e" scope %0
+    firrtl.layerblock @A {
+      dbg.variable "v", %a scope %1 : !firrtl.uint<1>
+      %2 = dbg.scope "d" scope %0
+
+      %instance_scope_1 = dbg.value path @debug_DebugScope_x type "Leaf"
+      dbg.variable "x", %instance_scope_1 scope %2 : !dbg.value
+      firrtl.instance x sym @x @Leaf()
+      dbg.variable "w", %a scope %2 : !firrtl.uint<1>
+    }
+  }
 }

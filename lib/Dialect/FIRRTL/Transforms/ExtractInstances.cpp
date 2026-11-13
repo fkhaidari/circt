@@ -22,6 +22,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Analysis/FIRRTLInstanceInfo.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/Emit/EmitOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAnnotationHelper.h"
@@ -80,6 +81,9 @@ struct ExtractInstancesPass
   void collectAnnos();
   void collectAnno(InstanceOp inst, Annotation anno);
   void extractInstances();
+  hw::HierPathOp createDebugPath(Location loc, ArrayRef<Attribute> steps);
+  void cloneDebugDescriptions(ArrayRef<debug::VariableOp> descriptions,
+                              InstanceOp instance, InstanceOp parentInstance);
   void groupInstances();
   void createTraceFiles(ClassOp &sifiveMetadata);
   void createSchema();
@@ -511,6 +515,89 @@ static unsigned findInstanceInNLA(InstanceOp inst, hw::HierPathOp nla) {
 /// Move instances in the extraction worklist upwards in the hierarchy. This
 /// iteratively pushes instances up one level of hierarchy until they have
 /// arrived in the desired container module.
+hw::HierPathOp
+ExtractInstancesPass::createDebugPath(Location loc, ArrayRef<Attribute> steps) {
+  auto builder = OpBuilder::atBlockEnd(circuitOp.getBodyBlock());
+  auto path = hw::HierPathOp::create(
+      builder, loc,
+      builder.getStringAttr(circuitNamespace.newName("debug_extracted")),
+      builder.getStringAttr("private"), builder.getArrayAttr(steps));
+  symbolTable->insert(path);
+  getAnalysis<NLATable>().addNLA(path);
+  return path;
+}
+
+void ExtractInstancesPass::cloneDebugDescriptions(
+    ArrayRef<debug::VariableOp> descriptions, InstanceOp instance,
+    InstanceOp parentInstance) {
+  if (descriptions.empty())
+    return;
+  auto parent = parentInstance->getParentOfType<FModuleOp>();
+  auto parentRef = getInnerRefTo(parentInstance);
+  auto instanceRef = getInnerRefTo(instance);
+  OpBuilder builder(parentInstance);
+  SmallVector<debug::VariableOp> parents;
+  parent.walk([&](debug::VariableOp variable) {
+    auto value = variable.getValue().getDefiningOp<debug::ValueOp>();
+    if (!value || !value.getPathAttr())
+      return;
+    auto path =
+        symbolTable->lookup<hw::HierPathOp>(value.getPathAttr().getValue());
+    if (path && path.getNamepath().size() == 1 &&
+        path.getNamepath()[0] == parentRef)
+      parents.push_back(variable);
+  });
+  if (parents.empty()) {
+    auto path = createDebugPath(parentInstance.getLoc(), {parentRef});
+    OperationState state(parentInstance.getLoc(),
+                         debug::ValueOp::getOperationName());
+    state.addTypes(debug::ValueType::get(&getContext()));
+    state.addAttribute("path", FlatSymbolRefAttr::get(path.getSymNameAttr()));
+    state.addAttribute("type", parentInstance.getModuleNameAttr().getAttr());
+    auto value = cast<debug::ValueOp>(builder.create(state));
+    if (auto *callee = symbolTable->lookup(parentInstance.getModuleName()))
+      if (auto info = debug::getModuleDescription(callee)) {
+        value.setDefAttr(FlatSymbolRefAttr::get(info.getSymNameAttr()));
+        value.removeTypeAttr();
+      }
+    parents.push_back(debug::VariableOp::create(
+        builder, parentInstance.getLoc(), parentInstance.getNameAttr(), value,
+        Value(),
+        debug::VariableKindAttr::get(&getContext(),
+                                     debug::VariableKind::Instance)));
+  }
+  for (auto parentDescription : parents) {
+    builder.setInsertionPointAfter(parentDescription);
+    auto parentScope = debug::ScopeOp::create(
+        builder, parentDescription.getLoc(), parentDescription.getNameAttr(),
+        parentDescription.getScope());
+    DenseMap<Value, Value> copies;
+    std::function<Value(Value)> cloneScope = [&](Value value) -> Value {
+      if (!value)
+        return parentScope.getResult();
+      if (auto found = copies.find(value); found != copies.end())
+        return found->second;
+      auto source = value.getDefiningOp<debug::ScopeOp>();
+      auto enclosing = cloneScope(source.getScope());
+      auto copy = cast<debug::ScopeOp>(builder.clone(*source));
+      copy.getScopeMutable().assign(enclosing);
+      copy.removeInnerSymAttr();
+      copies[value] = copy;
+      return copy;
+    };
+    for (auto description : descriptions) {
+      auto scope = cloneScope(description.getScope());
+      auto source = description.getValue().getDefiningOp<debug::ValueOp>();
+      auto value = cast<debug::ValueOp>(builder.clone(*source));
+      auto path = createDebugPath(value.getLoc(), {instanceRef});
+      value.setPathAttr(FlatSymbolRefAttr::get(path.getSymNameAttr()));
+      debug::VariableOp::create(builder, description.getLoc(),
+                                description.getNameAttr(), value, scope,
+                                description.getKindAttr());
+    }
+  }
+}
+
 void ExtractInstancesPass::extractInstances() {
   // The list of ports to be added to an instance's parent module. Cleared and
   // reused across instances.
@@ -613,6 +700,10 @@ void ExtractInstancesPass::extractInstances() {
     // Get the NLAs that pass through the InstanceOp `inst`.
     // This does not returns NLAs that have the `inst` as the leaf.
     nlaTable.getInstanceNLAs(inst, instanceNLAs);
+    if (auto sym = getInnerSymName(inst))
+      for (auto path : circuitOp.getOps<hw::HierPathOp>())
+        if (path.hasInnerSym(parent.getModuleNameAttr(), sym))
+          instanceNLAs.insert(path);
     // Map of the NLAs, that are applied to the InstanceOp. That is the NLA
     // terminates on the InstanceOp.
     DenseMap<hw::HierPathOp, SmallVector<Annotation>> instNonlocalAnnos;
@@ -635,6 +726,25 @@ void ExtractInstancesPass::extractInstances() {
                                                    instanceNLAs.end());
     llvm::sort(sortedInstanceNLAs,
                [](auto a, auto b) { return a.getName() < b.getName(); });
+
+    SmallVector<debug::VariableOp> descriptions;
+    if (inst.getInnerSymAttr()) {
+      auto ref = getInnerRefTo(inst);
+      parent.walk([&](debug::VariableOp variable) {
+        auto value = variable.getValue().getDefiningOp<debug::ValueOp>();
+        if (!value || !value.getPathAttr())
+          return;
+        auto path =
+            symbolTable->lookup<hw::HierPathOp>(value.getPathAttr().getValue());
+        if (!path)
+          return;
+        auto steps = path.getNamepath();
+        if ((steps.size() == 1 ||
+             (steps.size() == 2 && isa<FlatSymbolRefAttr>(steps[1]))) &&
+            steps[0] == ref)
+          descriptions.push_back(variable);
+      });
+    }
 
     // Move the original instance one level up such that it is right next to
     // the instances of the parent module, and wire the instance ports up to
@@ -672,6 +782,7 @@ void ExtractInstancesPass::extractInstances() {
       ImplicitLocOpBuilder builder(inst.getLoc(), newParentInst);
       builder.setInsertionPointAfter(newParentInst);
       builder.insert(newInst);
+      cloneDebugDescriptions(descriptions, newInst, newParentInst);
       if (newParentInst.getInnerSymAttr())
         innerRefToInstances[getInnerRefTo(newInst)] = newInst;
       for (unsigned portIdx = 0; portIdx < numInstPorts; ++portIdx) {
@@ -810,7 +921,12 @@ void ExtractInstancesPass::extractInstances() {
         // leave the NLA in a degenerate state, with only a single element in
         // its path. If that is the case we have to convert the NLA into a
         // regular local annotation.
-        if (nlaPath.size() == 2) {
+        bool hasDebugUser = false;
+        circuitOp.walk([&](debug::ValueOp value) {
+          auto ref = value.getPathAttr();
+          hasDebugUser |= ref && ref.getAttr() == nla.getSymNameAttr();
+        });
+        if (nlaPath.size() == 2 && !hasDebugUser) {
           for (auto anno : instNonlocalAnnos.lookup(nla)) {
             anno.removeMember("circt.nonlocal");
             newInstNonlocalAnnos.push_back(anno);
@@ -881,6 +997,41 @@ void ExtractInstancesPass::extractInstances() {
     // it no longer go through the parent module.
     nlaTable.removeNLAsfromModule(instanceNLAs, parent.getNameAttr());
 
+    for (auto description : descriptions) {
+      auto value = description.getValue().getDefiningOp<debug::ValueOp>();
+      OpBuilder builder(description);
+      auto scope = debug::ScopeOp::create(builder, description.getLoc(),
+                                          description.getNameAttr(),
+                                          description.getScope());
+      auto definition = value.getDefAttr();
+      if (!definition) {
+        SymbolTable symbols(circuitOp);
+        OpBuilder descriptorBuilder(circuitOp.getBodyBlock(),
+                                    circuitOp.getBodyBlock()->begin());
+        auto info = debug::ModuleInfoOp::create(
+            descriptorBuilder, description.getLoc(),
+            descriptorBuilder.getStringAttr(
+                (description.getName() + "Debug").str()),
+            value.getTypeAttr() ? value.getTypeAttr()
+                                : inst.getModuleNameAttr().getAttr(),
+            value.getExtAttr(), FlatSymbolRefAttr(), StringAttr());
+        symbols.insert(info);
+        definition = FlatSymbolRefAttr::get(info.getSymNameAttr());
+      }
+      scope.setDefAttr(definition);
+      description.erase();
+      if (value->use_empty())
+        value.erase();
+    }
+    if (auto sym = getInnerSymName(inst))
+      for (auto path :
+           llvm::make_early_inc_range(circuitOp.getOps<hw::HierPathOp>()))
+        if (path.hasInnerSym(parent.getModuleNameAttr(), sym) &&
+            SymbolTable::symbolKnownUseEmpty(path, circuitOp)) {
+          nlaTable.erase(path);
+          nlasToRemove.erase(path);
+          path.erase();
+        }
     // Clean up the original instance.
     inst.erase();
     newPorts.clear();
@@ -958,6 +1109,10 @@ void ExtractInstancesPass::groupInstances() {
       DenseSet<hw::HierPathOp> instNlas;
       // Get the NLAs that pass through the `inst`, and not end at it.
       nlaTable.getInstanceNLAs(inst, instNlas);
+      if (auto sym = getInnerSymName(inst))
+        for (auto path : circuitOp.getOps<hw::HierPathOp>())
+          if (path.hasInnerSym(parent.getModuleNameAttr(), sym))
+            instNlas.insert(path);
       AnnotationSet instAnnos(inst);
       // Get the NLAs that end at the InstanceOp, that is the Nonlocal
       // annotations that apply to the InstanceOp.

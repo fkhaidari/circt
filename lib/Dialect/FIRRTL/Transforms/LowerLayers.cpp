@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/Emit/EmitOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
@@ -454,6 +455,23 @@ LogicalResult LowerLayersPass::runOnModuleBody(FModuleOp moduleOp,
       replacement = localBuilder.clone(*value.getDefiningOp())->getResult(0);
       replacements.insert({value, replacement});
       return replacement;
+    }
+
+    // A debug scope has no XMR representation either.  Clone it, together with
+    // its parent scopes, at the start of the layer block.
+    if (auto scopeOp = value.getDefiningOp<debug::ScopeOp>()) {
+      Value parent;
+      if (auto scope = scopeOp.getScope()) {
+        parent = getReplacement(user, scope);
+        localBuilder.setInsertionPointAfter(parent.getDefiningOp());
+      }
+      auto clone = cast<debug::ScopeOp>(localBuilder.clone(*scopeOp));
+      clone.removeInnerSymAttr();
+      if (parent)
+        clone.getScopeMutable().assign(parent);
+      localBuilder.setInsertionPointAfter(clone);
+      replacements.insert({value, clone});
+      return clone;
     }
 
     // If the operand is an XMR ref, then we _have_ to clone it.
@@ -1458,6 +1476,32 @@ void LowerLayersPass::runOnOperation() {
       hierPathOp.setNamepathAttr(
           ArrayAttr::get(circuitOp.getContext(), newNamepath));
   }
+
+  // A description moved with its target starts at the new containing module.
+  circuitOp.walk([&](debug::ValueOp value) {
+    auto ref = value.getPathAttr();
+    if (!ref)
+      return;
+    auto path =
+        SymbolTable::lookupNearestSymbolFrom<hw::HierPathOp>(value, ref);
+    auto owner = value->getParentOfType<FModuleOp>();
+    if (!path || !owner)
+      return;
+    auto steps = path.getNamepath().getValue();
+    auto start = llvm::find_if(steps, [&](Attribute step) {
+      auto inner = dyn_cast<hw::InnerRefAttr>(step);
+      return inner && inner.getModule() == owner.getNameAttr();
+    });
+    if (start == steps.begin() || start == steps.end())
+      return;
+    auto builder = OpBuilder::atBlockEnd(circuitOp.getBodyBlock());
+    auto local = hw::HierPathOp::create(
+        builder, value.getLoc(),
+        builder.getStringAttr(ns.newName("debug_layer")),
+        builder.getStringAttr("private"),
+        builder.getArrayAttr(steps.drop_front(start - steps.begin())));
+    value.setPathAttr(FlatSymbolRefAttr::get(local.getSymNameAttr()));
+  });
 
   // All layers definitions can now be deleted.
   for (auto layerOp :

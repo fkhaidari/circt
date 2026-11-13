@@ -53,6 +53,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Analysis/FIRRTLInstanceInfo.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
@@ -219,6 +220,7 @@ void InjectDUTHierarchy::runOnOperation() {
   // After this, he original DUT module is now the "wrapper".  The new module we
   // just created becomes the "DUT".
   auto oldDutNameAttr = dut.getNameAttr();
+  auto sourceDescription = debug::getModuleDescription(dut);
   wrapper = dut;
   dut = FModuleOp::create(b, dut.getLoc(), oldDutNameAttr,
                           dut.getConventionAttr(), dut.getPorts());
@@ -275,6 +277,10 @@ void InjectDUTHierarchy::runOnOperation() {
     wrapper.setPortAnnotationsAttr(emptyArray);
     wrapper.setName(name);
   }
+
+  if (sourceDescription)
+    sourceDescription.setImplAttr(
+        FlatSymbolRefAttr::get(wrapper.getNameAttr()));
 
   // Instantiate the wrapper inside the DUT and wire it up.
   b.setInsertionPointToStart(dut.getBodyBlock());
@@ -348,10 +354,12 @@ void InjectDUTHierarchy::runOnOperation() {
     // locked to the DUT.  However, annotations are not supposed to have
     // semantics like this.
     if (nla.root() == oldDutNameAttr) {
-      assert(namepath.size() > 1 && "namepath size must be greater than one");
-      SmallVector<Attribute> newNamepath{hw::InnerRefAttr::get(
-          wrapper.getNameAttr(),
-          cast<hw::InnerRefAttr>(namepath.front()).getName())};
+      SmallVector<Attribute> newNamepath;
+      if (auto ref = dyn_cast<hw::InnerRefAttr>(namepath.front()))
+        newNamepath.push_back(
+            hw::InnerRefAttr::get(wrapper.getNameAttr(), ref.getName()));
+      else
+        newNamepath.push_back(FlatSymbolRefAttr::get(wrapper.getNameAttr()));
       auto tail = namepath.drop_front();
       newNamepath.append(tail.begin(), tail.end());
       nla->setAttr("namepath", b.getArrayAttr(newNamepath));
@@ -420,6 +428,38 @@ void InjectDUTHierarchy::runOnOperation() {
     annotations.addAnnotations(newAnnotations);
     annotations.applyToPort(dut, i);
   }
+
+  DenseSet<Attribute> dutInstances;
+  circuit.walk([&](InstanceOp instance) {
+    if (instance.getModuleNameAttr().getAttr() != dut.getNameAttr())
+      return;
+    if (auto sym = instance.getInnerSymAttr())
+      dutInstances.insert(hw::InnerRefAttr::get(
+          instance->getParentOfType<FModuleOp>().getNameAttr(),
+          sym.getSymName()));
+  });
+  auto wrapperRef = hw::InnerRefAttr::get(
+      dut.getNameAttr(), wrapperInst.getInnerSymAttr().getSymName());
+  circuit.walk([&](debug::ValueOp value) {
+    auto ref = value.getPathAttr();
+    if (!ref)
+      return;
+    auto sourcePath = dyn_cast_or_null<hw::HierPathOp>(
+        SymbolTable::lookupSymbolIn(circuit, ref));
+    if (!sourcePath || sourcePath.getNamepath().empty() ||
+        !dutInstances.contains(sourcePath.getNamepath().getValue().back()))
+      return;
+    SmallVector<Attribute> steps(sourcePath.getNamepath().begin(),
+                                 sourcePath.getNamepath().end());
+    steps.push_back(wrapperRef);
+    OpBuilder pathBuilder(circuit.getBodyBlock(),
+                          circuit.getBodyBlock()->end());
+    auto path = hw::HierPathOp::create(
+        pathBuilder, value.getLoc(),
+        pathBuilder.getStringAttr(circuitNS.newName("debug_dut")),
+        pathBuilder.getStringAttr("private"), pathBuilder.getArrayAttr(steps));
+    value.setPathAttr(FlatSymbolRefAttr::get(path.getSymNameAttr()));
+  });
 
   // Update rwprobe operations' local innerrefs within the module.
   wrapper.walk([&](RWProbeOp rwp) {
