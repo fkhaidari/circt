@@ -1,4 +1,4 @@
-// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl.module(firrtl-lower-intrinsics)))' -verify-diagnostics --split-input-file %s
+// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl-lower-intrinsics))' -verify-diagnostics --split-input-file %s
 
 firrtl.circuit "UnknownIntrinsic" {
   firrtl.module @UnknownIntrinsic(in %data: !firrtl.uint<32>) {

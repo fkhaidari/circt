@@ -37,16 +37,17 @@ LogicalResult firtool::populatePreprocessTransforms(mlir::PassManager &pm,
   pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerFIRRTLAnnotations(
       {/*ignoreAnnotationClassless=*/opt.shouldDisableClasslessAnnotations(),
        /*ignoreAnnotationUnknown=*/opt.shouldDisableUnknownAnnotations(),
-       /*noRefTypePorts=*/opt.shouldLowerNoRefTypePortAnnotations()}));
+       /*noRefTypePorts=*/opt.shouldLowerNoRefTypePortAnnotations(),
+       /*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
+
+  pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerIntmodules(
+      {/*fixupEICGWrapper=*/opt.shouldFixupEICGWrapper()}));
+  pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerIntrinsics(
+      {/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
 
   if (opt.shouldEnableDebugInfo())
     pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
         firrtl::createMaterializeDebugInfo());
-
-  pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerIntmodules(
-      {/*fixupEICGWrapper=*/opt.shouldFixupEICGWrapper()}));
-  pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
-      firrtl::createLowerIntrinsics());
 
   return success();
 }

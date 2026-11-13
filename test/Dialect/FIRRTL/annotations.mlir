@@ -1,3 +1,5 @@
+// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl-lower-annotations))'  --verify-diagnostics --split-input-file %s | FileCheck %s --check-prefix=META
+  // META-DAG: dbg.module @{{[^ ]+}} type "my.pkg.BB" impl @Ext
 // RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl-lower-annotations))'  --verify-diagnostics --split-input-file %s | FileCheck %s
 
 // circt.test copies the annotation to the target
@@ -874,6 +876,26 @@ firrtl.circuit "Test" attributes {
 
   // CHECK: @Child2() {
   firrtl.module @Child2() attributes {convention = #firrtl<convention internal>} {}
+}
+
+// -----
+
+// DebugSourceNameAnnotation sets the source class name of an extmodule.
+// CHECK-LABEL: firrtl.circuit "SourceName"
+firrtl.circuit "SourceName" attributes {
+  rawAnnotations = [
+    {
+      class = "circt.DebugSourceNameAnnotation",
+      target = "~SourceName|Ext",
+      name = "my.pkg.BB"
+    }
+  ]
+} {
+  // CHECK: firrtl.extmodule @Ext()
+  firrtl.extmodule @Ext()
+  firrtl.module @SourceName() {
+    firrtl.instance ext @Ext()
+  }
 }
 
 // -----

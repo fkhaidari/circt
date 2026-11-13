@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/CHIRRTLDialect.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAnnotationHelper.h"
@@ -310,6 +311,39 @@ static LogicalResult applyConventionAnno(const AnnoPathValue &target,
   }
 
   return error() << "can only target to a module or extmodule";
+}
+
+static LogicalResult applyDebugSourceNameAnno(const AnnoPathValue &target,
+                                              DictionaryAttr anno,
+                                              ApplyState &state) {
+  auto *op = target.ref.getOp();
+  auto loc = op->getLoc();
+  auto error = [&]() {
+    return mlir::emitError(loc) << debugSourceNameAnnoClass << " ";
+  };
+
+  auto extModule = dyn_cast<FExtModuleOp>(op);
+  if (!isa<OpAnnoTarget>(target.ref) || !extModule)
+    return error() << "must target an extmodule";
+  if (!target.isLocal())
+    return error() << "must be local";
+
+  auto name =
+      tryGetAs<StringAttr>(anno, anno, "name", loc, debugSourceNameAnnoClass);
+  if (!name)
+    return failure();
+  if (name.empty())
+    return error() << "name must not be empty";
+  auto module = FlatSymbolRefAttr::get(extModule.getNameAttr());
+  auto circuit = extModule->getParentOfType<CircuitOp>();
+  for (auto info : circuit.getOps<debug::ModuleInfoOp>())
+    if (info.getImplAttr() == module) {
+      if (info.getTypeAttr() != name)
+        return error() << "extmodule already has a source name";
+      return success();
+    }
+  debug::getOrCreateModuleDescription(extModule, name);
+  return success();
 }
 
 static LogicalResult applyBodyTypeLoweringAnno(const AnnoPathValue &target,
@@ -1130,8 +1164,14 @@ void LowerAnnotationsPass::runOnOperation() {
   // not supposed to touch _other_ annotations to enable this pass to be run
   // after FIRAnnotations/FIRParser.
   auto annotations = circuit->getAttrOfType<ArrayAttr>(rawAnnotations);
-  if (!annotations)
+  if (!annotations) {
+    if (!emitDebugInfo)
+      for (auto info :
+           llvm::make_early_inc_range(circuit.getOps<debug::ModuleInfoOp>()))
+        if (info.getImplAttr())
+          info.erase();
     return;
+  }
   circuit->removeAttr(rawAnnotations);
 
   // Populate the worklist in reverse order.  This has the effect of causing
@@ -1161,6 +1201,12 @@ void LowerAnnotationsPass::runOnOperation() {
 
   if (failed(solveWiringProblems(state)))
     ++numFailures;
+
+  if (!emitDebugInfo)
+    for (auto info :
+         llvm::make_early_inc_range(circuit.getOps<debug::ModuleInfoOp>()))
+      if (info.getImplAttr())
+        info.erase();
 
   // Update statistics
   numRawAnnotations += annotations.size();

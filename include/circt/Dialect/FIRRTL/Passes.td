@@ -39,8 +39,10 @@ def LowerFIRRTLAnnotations : Pass<"firrtl-lower-annotations", "firrtl::CircuitOp
       "Ignore unknown annotations.">,
     Option<"noRefTypePorts", "no-ref-type-ports", "bool", "false",
       "Create normal ports, not ref type ports.">,
+    Option<"emitDebugInfo", "emit-debug-info", "bool", "true",
+      "Keep external module source descriptions.">,
   ];
-  let dependentDialects = ["hw::HWDialect"];
+  let dependentDialects = ["hw::HWDialect", "debug::DebugDialect"];
   let statistics = [
     Statistic<"numRawAnnotations", "num-raw-annos",
       "Number of raw annotations on circuit">,
@@ -665,11 +667,21 @@ def LowerIntmodules : Pass<"firrtl-lower-intmodules", "firrtl::CircuitOp"> {
   ];
 }
 
-def LowerIntrinsics : Pass<"firrtl-lower-intrinsics", "firrtl::FModuleOp"> {
+def LowerIntrinsics : Pass<"firrtl-lower-intrinsics", "firrtl::CircuitOp"> {
   let summary = "Lower intrinsics";
   let description = [{
     This pass lowers generic intrinsic ops to their implementation or op.
+
+    The `circt_debug_*` intrinsics are converted to Debug dialect ops when
+    `emit-debug-info` is set, and erased otherwise. In a `firrtl.class` body
+    they are always erased. External module source descriptions are controlled
+    by `firrtl-lower-annotations`.
   }];
+  let options = [
+    Option<"emitDebugInfo", "emit-debug-info", "bool", "false",
+           "Convert debug intrinsics to Debug ops instead of erasing them">
+  ];
+  let dependentDialects = ["debug::DebugDialect"];
   let statistics = [
     Statistic<"numConverted", "num-converted", "Number of intrinsic operations lowered">,
   ];
@@ -795,6 +807,11 @@ def MaterializeDebugInfo :
     registers, and instances throughout the pipeline. The `DebugInfo` analysis
     can then be used at a later point in the pipeline to obtain a source
     language view into the lowered IR.
+
+    A port or declaration that existing Debug ops already describe, for example
+    those converted from a frontend's intrinsics, gets no variable. The pass
+    assumes that a frontend which describes a declaration describes all of it.
+    A declaration that is described only in part gets no variable for the rest.
   }];
   let dependentDialects = ["debug::DebugDialect"];
 }

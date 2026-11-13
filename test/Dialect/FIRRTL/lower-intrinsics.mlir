@@ -1,4 +1,4 @@
-// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl.module(firrtl-lower-intrinsics)))' %s | FileCheck %s --check-prefixes=CHECK --implicit-check-not firrtl.int.generic
+// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl-lower-intrinsics))' %s | FileCheck %s --check-prefixes=CHECK --implicit-check-not firrtl.int.generic
 
 // CHECK-LABEL: "Foo"
 firrtl.circuit "Foo" {
