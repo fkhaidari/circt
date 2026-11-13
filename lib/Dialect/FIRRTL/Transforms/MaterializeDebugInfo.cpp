@@ -103,6 +103,17 @@ void MaterializeDebugInfoPass::materializeModule(FModuleOp module,
         debug::VariableKindAttr::get(builder.getContext(),
                                      debug::VariableKind::Instance));
   };
+  if (memoriesOnly) {
+    module.walk([&](MemOp memory) {
+      auto ref =
+          getInnerRefTo(memory, [&](FModuleLike) -> auto & { return names; });
+      if (!describedInstances.insert(ref).second)
+        return;
+      describe(memory, ref, builder.getStringAttr(memory.getName() + "_ext"),
+               StringAttr());
+    });
+    return;
+  }
   module.walk([&](InstanceOp instance) {
     auto ref =
         getInnerRefTo(instance, [&](FModuleLike) -> auto & { return names; });

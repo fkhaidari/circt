@@ -122,6 +122,10 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
       {/*preserveAggregate=*/opt.getPreserveAggregate(),
        /*preserveMemory=*/firrtl::PreserveAggregate::None}));
 
+  if (opt.shouldEnableDebugInfo())
+    pm.nest<firrtl::CircuitOp>().addPass(
+        firrtl::createMaterializeDebugInfo({/*memoriesOnly=*/true}));
+
   {
     auto &modulePM = pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>();
     modulePM.addPass(firrtl::createExpandWhens());
@@ -224,8 +228,8 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
     if (opt.shouldInlineInputOnlyModules()) {
       pm.nest<firrtl::CircuitOp>().addPass(
           firrtl::createAnnotateInputOnlyModules());
-      pm.nest<firrtl::CircuitOp>().addPass(
-      firrtl::createInliner({/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
+      pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInliner(
+          {/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
       pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
           createSimpleCanonicalizerPass());
     }
@@ -347,8 +351,9 @@ LogicalResult firtool::populateHWToSV(mlir::PassManager &pm,
        opt.shouldEmitSeparateAlwaysBlocks()}));
   pm.addNestedPass<hw::HWModuleOp>(createLowerVerifToSVPass());
   pm.addPass(seq::createHWMemSimImpl(
-      {/*disableMemRandomization=*/!opt.isRandomEnabled(
-           FirtoolOptions::RandomKind::Mem),
+      {/*emitDebugInfo=*/opt.shouldEnableDebugInfo(),
+       /*disableMemRandomization=*/
+       !opt.isRandomEnabled(FirtoolOptions::RandomKind::Mem),
        /*disableRegRandomization=*/
        !opt.isRandomEnabled(FirtoolOptions::RandomKind::Reg),
        /*replSeqMem=*/opt.shouldReplaceSequentialMemories(),

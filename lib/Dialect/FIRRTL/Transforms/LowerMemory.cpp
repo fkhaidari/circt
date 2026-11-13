@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLUtils.h"
@@ -323,6 +324,37 @@ void LowerMemoryPass::lowerMemory(MemOp mem, const FirMemory &summary) {
     newAnnos.addAnnotations(newMemModAnnos);
     newAnnos.applyToOperation(memInst);
   }
+  if (auto sym = inst.getInnerSymAttr()) {
+    auto parent = inst->getParentOfType<FModuleOp>();
+    auto target = hw::InnerRefAttr::get(parent.getNameAttr(), sym.getSymName());
+    auto circuit = getOperation();
+    circuit.walk([&](debug::ValueOp value) {
+      SmallVector<Attribute> steps;
+      if (auto pathRef = value.getPathAttr()) {
+        auto path = symbolTable->lookup<hw::HierPathOp>(pathRef.getValue());
+        if (!path || path.getNamepath().empty() ||
+            path.getNamepath()[path.getNamepath().size() - 1] != target)
+          return;
+        llvm::append_range(steps, path.getNamepath());
+      } else {
+        return;
+      }
+      if (!memInst.getInnerSymAttr())
+        memInst.setInnerSymAttr(hw::InnerSymAttr::get(memInst.getNameAttr()));
+      steps.push_back(hw::InnerRefAttr::get(
+          wrapper.getNameAttr(), memInst.getInnerSymAttr().getSymName()));
+      OpBuilder pathBuilder(circuit.getBodyBlock(),
+                            circuit.getBodyBlock()->end());
+      auto path = hw::HierPathOp::create(
+          pathBuilder, value.getLoc(),
+          pathBuilder.getStringAttr(circuitNamespace.newName("debug_memory")),
+          pathBuilder.getStringAttr("private"),
+          pathBuilder.getArrayAttr(steps));
+      symbolTable->insert(path);
+      value.setPathAttr(FlatSymbolRefAttr::get(path.getSymNameAttr()));
+    });
+  }
+
   operationsToErase.insert(mem);
   ++numLoweredMems;
 }

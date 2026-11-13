@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "circt/Dialect/Comb/CombOps.h"
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/Emit/EmitOps.h"
 #include "circt/Dialect/HW/HWAttributes.h"
 #include "circt/Dialect/HW/HWOps.h"
@@ -733,6 +734,7 @@ void HWMemSimImplPass::runOnOperation() {
 
   SmallVector<HWModuleGeneratedOp> toErase;
   bool anythingChanged = false;
+  DenseSet<StringAttr> describedMemories;
 
   for (auto op :
        llvm::make_early_inc_range(topModule.getOps<HWModuleGeneratedOp>())) {
@@ -752,8 +754,12 @@ void HWMemSimImplPass::runOnOperation() {
       // 2. undefined read-under-write behavior.
       if (replSeqMem && ((mem.readLatency >= 1 && mem.writeLatency >= 1) &&
                          mem.dataWidth > 0)) {
-        HWModuleExternOp::create(builder, oldModule.getLoc(), nameAttr,
-                                 oldModule.getPortList());
+        auto external = HWModuleExternOp::create(
+            builder, oldModule.getLoc(), nameAttr, oldModule.getPortList());
+        if (emitDebugInfo) {
+          debug::getOrCreateModuleDescription(external, nameAttr);
+          describedMemories.insert(nameAttr);
+        }
       } else {
         auto newModule = HWModuleOp::create(builder, oldModule.getLoc(),
                                             nameAttr, oldModule.getPortList());
@@ -768,12 +774,76 @@ void HWMemSimImplPass::runOnOperation() {
                      addVivadoRAMAddressConflictSynthesisBugWorkaround,
                      mlirModuleNamespace)
             .generateMemory(newModule, mem);
+        if (emitDebugInfo) {
+          builder.setInsertionPointToStart(newModule.getBodyBlock());
+          debug::getOrCreateModuleDescription(newModule, nameAttr);
+          auto *outputs = newModule.getBodyBlock()->getTerminator();
+          for (auto port : newModule.getPortList()) {
+            Value value =
+                port.isOutput()
+                    ? outputs->getOperand(port.argNum)
+                    : newModule.getBodyBlock()->getArgument(port.argNum);
+            builder.setInsertionPoint(outputs);
+            debug::VariableOp::create(
+                builder, oldModule.getLoc(), port.name, value, Value(),
+                debug::VariableKindAttr::get(&getContext(),
+                                             port.isOutput()
+                                                 ? debug::VariableKind::Output
+                                                 : debug::VariableKind::Input));
+          }
+          describedMemories.insert(nameAttr);
+        }
         if (auto fragments = oldModule->getAttr(emit::getFragmentsAttrName()))
           newModule->setAttr(emit::getFragmentsAttrName(), fragments);
       }
 
       oldModule.erase();
       anythingChanged = true;
+    }
+  }
+
+  if (emitDebugInfo) {
+    for (auto module : topModule.getOps<HWModuleOp>()) {
+      InnerSymbolNamespace names(module);
+      DenseSet<Attribute> describedInstances;
+      module.walk([&](debug::ValueOp value) {
+        if (auto ref = value.getPathAttr()) {
+          auto path =
+              SymbolTable::lookupNearestSymbolFrom<HierPathOp>(value, ref);
+          if (!path)
+            return;
+          auto steps = path.getNamepath();
+          if (steps.size() == 1 ||
+              (steps.size() == 2 && isa<FlatSymbolRefAttr>(steps[1])))
+            describedInstances.insert(steps[0]);
+        }
+      });
+      module.walk([&](hw::InstanceOp instance) {
+        if (!describedMemories.contains(instance.getModuleNameAttr().getAttr()))
+          return;
+        if (!instance.getInnerSymAttr())
+          instance.setInnerSymAttr(InnerSymAttr::get(StringAttr::get(
+              &getContext(), names.newName(instance.getInstanceName()))));
+        if (describedInstances.contains(instance.getInnerRef()))
+          return;
+        OpBuilder builder(instance);
+        auto pathBuilder = OpBuilder::atBlockEnd(topModule.getBody());
+        auto path = HierPathOp::create(
+            pathBuilder, instance.getLoc(),
+            pathBuilder.getStringAttr(
+                mlirModuleNamespace.newName("debug_memory")),
+            pathBuilder.getStringAttr("private"),
+            pathBuilder.getArrayAttr({instance.getInnerRef()}));
+        auto value = debug::ValueOp::create(
+            builder, instance.getLoc(), debug::ValueType::get(&getContext()),
+            Value(), StringAttr(), StringAttr(),
+            FlatSymbolRefAttr::get(path.getSymNameAttr()));
+        debug::VariableOp::create(
+            builder, instance.getLoc(), instance.getInstanceNameAttr(), value,
+            Value(),
+            debug::VariableKindAttr::get(&getContext(),
+                                         debug::VariableKind::Instance));
+      });
     }
   }
 

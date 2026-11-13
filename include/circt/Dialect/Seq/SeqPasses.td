@@ -69,12 +69,15 @@ def HWMemSimImpl : Pass<"hw-memory-sim", "ModuleOp"> {
   }];
 
   let dependentDialects = [
+    "circt::debug::DebugDialect",
     "circt::emit::EmitDialect",
     "circt::hw::HWDialect",
     "circt::sv::SVDialect",
   ];
 
   let options = [
+    Option<"emitDebugInfo", "emit-debug-info", "bool", "false",
+           "Describe generated memory ports in debug information">,
     Option<"disableMemRandomization", "disable-mem-randomization", "bool", "false",
             "Disable emission of memory randomization code">,
     Option<"disableRegRandomization", "disable-reg-randomization", "bool", "false",

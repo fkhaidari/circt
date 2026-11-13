@@ -817,6 +817,10 @@ def MaterializeDebugInfo :
     assumes that a frontend which describes a declaration describes all of it.
     A declaration that is described only in part gets no variable for the rest.
   }];
+  let options = [
+    Option<"memoriesOnly", "memories-only", "bool", "false",
+           "Describe memory instances after memory type lowering">
+  ];
   let dependentDialects = ["debug::DebugDialect"];
 }
 
