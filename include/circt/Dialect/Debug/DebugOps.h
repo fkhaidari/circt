@@ -32,6 +32,10 @@ ModuleInfoOp getModuleDescription(mlir::Operation *module);
 ModuleInfoOp getOrCreateModuleDescription(mlir::Operation *module,
                                           mlir::StringAttr typeName,
                                           mlir::StringAttr ext = {});
+/// Attach an implicit scope to debug variables and scopes without a parent.
+/// Returns true for Debug operations, whose source names must not be prefixed.
+bool updateImplicitScope(mlir::Operation *op, mlir::Value scope);
+void finalizeInstanceDescriptions(mlir::Operation *root);
 } // namespace circt::debug
 
 #endif // CIRCT_DIALECT_DEBUG_DEBUGOPS_H

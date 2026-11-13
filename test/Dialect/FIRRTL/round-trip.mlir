@@ -1,3 +1,5 @@
+// RUN: circt-opt --verify-roundtrip %s | FileCheck %s --check-prefix=META
+// META-DAG: dbg.module @{{[^ ]+}} type "my.pkg.BB" impl @SourceName
 // RUN: circt-opt --verify-roundtrip %s | FileCheck %s
 // Basic MLIR operation parser round-tripping
 
@@ -8,6 +10,11 @@ firrtl.circuit "Basic" attributes {
   firrtl.specialization_enable = #firrtl<layerspecialization enable>
   } {
 firrtl.extmodule @Basic()
+
+// CHECK: firrtl.extmodule @SourceName()
+firrtl.extmodule @SourceName()
+dbg.module @debug1 type "my.pkg.BB" impl @SourceName
+
 
 // CHECK: firrtl.module @Top(in %arg0: !firrtl.uint<1>) attributes {portNames = [""]}
 firrtl.module @Top(in %arg0: !firrtl.uint<1>) attributes {portNames = [""]} {}
@@ -511,6 +518,21 @@ firrtl.module @RegInitial(in %clock: !firrtl.clock, in %reset: !firrtl.uint<1>,
   %t = firrtl.reg %clock {initial = -1 : si8} : !firrtl.clock, !firrtl.sint<8>
 
   firrtl.matchingconnect %q, %r : !firrtl.uint<8>
+}
+
+// An instance may sit in a debug scope.
+firrtl.module private @ScopedChild(in %a: !firrtl.uint<1>) {}
+// CHECK-LABEL: firrtl.module @InstanceScope
+hw.hierpath private @debug_InstanceScope_x [@InstanceScope::@x]
+firrtl.module @InstanceScope() {
+  // CHECK-NEXT: [[SCOPE:%.+]] = dbg.scope "c"
+  // CHECK: %x_a = firrtl.instance x{{.*}} @ScopedChild(in a: !firrtl.uint<1>)
+  // CHECK-NEXT: %y_a = firrtl.instance y @ScopedChild(in a: !firrtl.uint<1>){{$}}
+  %0 = dbg.scope "c"
+  %instance_scope_1 = dbg.value path @debug_InstanceScope_x type "ScopedChild"
+  dbg.variable "x", %instance_scope_1 scope %0 : !dbg.value
+  %x_a = firrtl.instance x sym @x @ScopedChild(in a: !firrtl.uint<1>)
+  %y_a = firrtl.instance y @ScopedChild(in a: !firrtl.uint<1>)
 }
 
 }

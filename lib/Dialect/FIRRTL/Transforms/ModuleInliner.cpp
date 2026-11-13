@@ -362,6 +362,9 @@ InliningFacts::compute(CircuitOp circuit, InstanceGraph &instanceGraph,
     if (!symbolUses)
       return op.emitError("cannot analyze symbol uses of this operation");
     for (const auto &use : *symbolUses) {
+      if (auto description = dyn_cast<debug::ModuleInfoOp>(use.getUser());
+          description && description.getImplAttr() == use.getSymbolRef())
+        continue;
       auto root = use.getSymbolRef().getRootReference();
       if (auto moduleLike = symbolTable.lookup<FModuleLike>(root)) {
         auto &info = classification[moduleLike];
@@ -1088,6 +1091,15 @@ NLAPlanner::processSinglePathContext(StringAttr origSym,
     // be unreachable from current frontend + pipeline.
     // https://github.com/llvm/circt/issues/10908
     if (isEvaporating && isTerminal) {
+      auto uses = SymbolTable::getSymbolUses(
+          diagAnchor, diagAnchor->getParentOfType<CircuitOp>());
+      if (uses && !uses->empty() &&
+          llvm::all_of(*uses, [](const SymbolTable::SymbolUse &use) {
+            return isa<debug::ValueOp>(use.getUser());
+          }))
+        isEvaporating = false;
+    }
+    if (isEvaporating && isTerminal) {
       assert(hop.inst && "expected instance operation");
       auto diag = diagAnchor.emitError(
           "hierpath points to inlined instance, cannot proceed");
@@ -1299,7 +1311,8 @@ public:
   /// Initialize the inliner to run on this circuit.
   Inliner(CircuitOp circuit, SymbolTable &symbolTable,
           CircuitNamespace &circuitNamespace,
-          const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner);
+          const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner,
+          bool emitDebugInfo);
 
   /// Run the inliner.
   LogicalResult run();
@@ -1572,6 +1585,11 @@ private:
   /// The debug scopes created for inlined instances.
   /// Scopes that are unused after inlining will be deleted again.
   SmallVector<debug::ScopeOp> debugScopes;
+  DenseSet<Operation *> instanceDescriptionTargets;
+  DenseMap<Operation *, VirtualNLA *> clonedDescriptionContexts;
+
+  /// Whether to create debug scopes for inlined instances.
+  bool emitDebugInfo;
 };
 } // namespace
 
@@ -1579,20 +1597,54 @@ private:
 
 Inliner::Inliner(CircuitOp circuit, SymbolTable &symbolTable,
                  CircuitNamespace &circuitNamespace,
-                 const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner)
+                 const InliningFacts &inliningFacts, NLAPlanner &nlaPlanner,
+                 bool emitDebugInfo)
     : circuit(circuit), context(circuit.getContext()), symbolTable(symbolTable),
       circuitNamespace(circuitNamespace), inliningFacts(inliningFacts),
-      nlaPlanner(nlaPlanner) {}
+      nlaPlanner(nlaPlanner), emitDebugInfo(emitDebugInfo) {}
 
 LogicalResult Inliner::run() {
+  circuit.walk([&](debug::ValueOp scope) {
+    if (auto pathRef = scope.getPathAttr()) {
+      auto path = symbolTable.lookup<hw::HierPathOp>(pathRef.getValue());
+      if (path) {
+        auto ref = dyn_cast<hw::InnerRefAttr>(
+            path.getNamepath()[path.getNamepath().size() - 1]);
+        if (ref)
+          if (auto module = symbolTable.lookup<FModuleOp>(ref.getModule()))
+            module.walk([&](InstanceOp instance) {
+              if (getInnerSymName(instance) == ref.getName())
+                instanceDescriptionTargets.insert(instance);
+            });
+      }
+    }
+  });
   if (failed(inlineModules()))
     return failure();
   eraseDeadModules();
 
   canonicalizeContexts();
+  for (auto [op, context] : clonedDescriptionContexts) {
+    auto value = cast<debug::ValueOp>(op);
+    auto *canonical = canonicalOrSelf(context);
+    context->wasUsed = true;
+    if (canonical->isLocal()) {
+      OpBuilder builder(this->context);
+      builder.setInsertionPointToStart(circuit.getBodyBlock());
+      auto path = hw::HierPathOp::create(
+          builder, value.getLoc(),
+          builder.getStringAttr(circuitNamespace.newName("debug_path")),
+          StringAttr(), materializeNamepath(canonical));
+      path.setPrivate();
+      value.setPathAttr(FlatSymbolRefAttr::get(path.getSymNameAttr()));
+    } else {
+      value.setPathAttr(FlatSymbolRefAttr::get(canonical->realizedSym));
+    }
+  }
   rewriteAnnotations();
   writebackHierPaths();
 
+  debug::finalizeInstanceDescriptions(circuit);
   return success();
 }
 
@@ -1601,22 +1653,10 @@ LogicalResult Inliner::run() {
 /// Prefix the op's name and unique its inner symbols in the module namespace.
 /// Renames land in `relocatedInnerSyms` for the level's inner-ref fixup.
 bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
-  // Debug operations with implicit module scope now need an explicit scope,
-  // since inlining has destroyed the module whose scope they implicitly used.
-  auto updateDebugScope = [&](auto op) {
-    if (!op.getScope())
-      op.getScopeMutable().assign(il.debugScope);
-  };
-  if (auto varOp = dyn_cast<debug::VariableOp>(op))
-    return updateDebugScope(varOp), false;
-  if (auto scopeOp = dyn_cast<debug::ScopeOp>(op))
-    return updateDebugScope(scopeOp), false;
-
-  // Prefix the "name" attribute, when present.
-  if (auto nameAttr = op->getAttrOfType<StringAttr>("name");
-      nameAttr && !isa<debug::ScopeOp>(op))
-    op->setAttr("name", StringAttr::get(op->getContext(),
-                                        (prefix + nameAttr.getValue())));
+  if (!debug::updateImplicitScope(op, il.debugScope))
+    if (auto nameAttr = op->getAttrOfType<StringAttr>("name"))
+      op->setAttr("name", StringAttr::get(op->getContext(),
+                                          (prefix + nameAttr.getValue())));
 
   // Unique any inner symbols; reflect renames on the active contexts' leaves.
   auto symOp = dyn_cast<hw::InnerSymbolOpInterface>(op);
@@ -1640,16 +1680,36 @@ bool Inliner::rename(StringRef prefix, Operation *op, InliningLevel &il) {
 
 bool Inliner::renameInstance(StringRef prefix, InliningLevel &il,
                              Operation *oldInst, Operation *newInst) {
-  // TODO: No way yet to annotate an explicit parent scope on instances.
-  // Just emit a note in debug runs until this is resolved.
-  LLVM_DEBUG({
-    if (il.debugScope)
-      llvm::dbgs() << "Discarding parent debug scope for " << *oldInst << "\n";
-  });
-
   auto oldInstSym = getInnerSymName(oldInst);
   auto symbolChanged = rename(prefix, newInst, il);
   auto newSymAttr = getInnerSymName(newInst);
+  if (il.debugScope && !instanceDescriptionTargets.contains(oldInst)) {
+    if (auto instance = dyn_cast<InstanceOp>(newInst)) {
+      if (!newSymAttr) {
+        newSymAttr = StringAttr::get(
+            context, il.mic.modNamespace.newName(instance.getName()));
+        instance.setInnerSymAttr(hw::InnerSymAttr::get(newSymAttr));
+      }
+      OpBuilder builder(newInst);
+      auto source = cast<InstanceOp>(oldInst);
+      OpBuilder pathBuilder(context);
+      pathBuilder.setInsertionPointToStart(circuit.getBodyBlock());
+      auto path = hw::HierPathOp::create(
+          pathBuilder, source.getLoc(),
+          pathBuilder.getStringAttr(circuitNamespace.newName("debug_path")),
+          StringAttr(),
+          pathBuilder.getArrayAttr({hw::InnerRefAttr::get(
+              il.mic.module.getModuleNameAttr(), newSymAttr)}));
+      path.setPrivate();
+      auto value = debug::ValueOp::create(
+          builder, source.getLoc(), debug::ValueType::get(context), Value(),
+          source.getModuleNameAttr().getAttr(), StringAttr(),
+          FlatSymbolRefAttr::get(path.getSymNameAttr()));
+      debug::VariableOp::create(
+          builder, source.getLoc(), source.getNameAttr(), value, il.debugScope,
+          debug::VariableKindAttr::get(context, debug::VariableKind::Instance));
+    }
+  }
 
   // Record the hop even when the symbol is unchanged: a relocated hop's
   // `finalSym` starts null and is only filled here, at its clone.
@@ -1673,6 +1733,7 @@ bool Inliner::renameInstance(StringRef prefix, InliningLevel &il,
 
 void Inliner::recordContexts(Operation *newOp, const InliningLevel &il) {
   StringAttr destMod = il.mic.module.getModuleNameAttr();
+  auto childModule = il.childModule;
 
   // Intersect a hierpath symbol's context group with the id-sorted active set,
   // keeping only those this destination module owns.
@@ -1711,6 +1772,18 @@ void Inliner::recordContexts(Operation *newOp, const InliningLevel &il) {
         out.push_back(*lo);
     }
   };
+
+  if (auto scope = dyn_cast<debug::ValueOp>(newOp))
+    if (auto ref = scope.getPathAttr())
+      for (auto *nla : il.activeNLAs)
+        if (nla->origSym == ref.getAttr() &&
+            nla->getPath().front().origMod == childModule.getNameAttr() &&
+            nla->getPath().front().finalMod == destMod) {
+          auto [it, inserted] =
+              clonedDescriptionContexts.try_emplace(newOp, nla);
+          assert((inserted || it->second == nla) &&
+                 "a cloned description must have one root context");
+        }
 
   // Annotations: record the owning contexts for the writeback.
   //
@@ -2001,6 +2074,15 @@ LogicalResult Inliner::processInto(StringRef prefix, InliningLevel &il,
     InliningLevel childIL(il.mic, childModule);
     setActiveNLAsForChild(il.activeNLAs, childIL, instance);
     createDebugScope(childIL, instance, il.debugScope);
+    if (childIL.debugScope && instance.getInnerSymAttr()) {
+      auto oldSym = instance.getInnerSymAttr();
+      auto newSym =
+          uniqueInNamespace(oldSym, il.relocatedInnerSyms, il.mic.modNamespace,
+                            il.childModule.getNameAttr());
+      childIL.debugScope.getDefiningOp<debug::ScopeOp>().setInnerSymAttr(
+          newSym);
+      updateVirtualNLALeafSymbols(il, oldSym, newSym);
+    }
 
     // Create the wire mapping for results + ports.
     auto nestedPrefix = (prefix + instance.getName() + "_").str();
@@ -2054,6 +2136,9 @@ LogicalResult Inliner::processInstances(FModuleOp module, bool flatten) {
     setActiveNLAsForChild(/* Activate all through this instance */ std::nullopt,
                           childIL, instance);
     createDebugScope(childIL, instance);
+    if (childIL.debugScope && instance.getInnerSymAttr())
+      childIL.debugScope.getDefiningOp<debug::ScopeOp>().setInnerSymAttr(
+          instance.getInnerSymAttr());
 
     auto nestedPrefix = (instance.getName() + "_").str();
     mapPortsToWires(nestedPrefix, childIL, mapper);
@@ -2077,9 +2162,17 @@ LogicalResult Inliner::processInstances(FModuleOp module, bool flatten) {
 
 void Inliner::createDebugScope(InliningLevel &il, InstanceOp instance,
                                Value parentScope) {
-  auto op = debug::ScopeOp::create(
-      il.mic.b, instance.getLoc(), instance.getInstanceNameAttr(),
-      parentScope);
+  auto definition = debug::getModuleDescription(il.childModule);
+  if (!definition && !emitDebugInfo &&
+      !instanceDescriptionTargets.contains(instance))
+    return;
+  auto op = debug::ScopeOp::create(il.mic.b, instance.getLoc(),
+                                   instance.getInstanceNameAttr(), parentScope);
+  if (!definition)
+    definition = debug::getOrCreateModuleDescription(
+        il.childModule, instance.getModuleNameAttr().getAttr());
+  if (definition)
+    op.setDefAttr(FlatSymbolRefAttr::get(definition.getSymNameAttr()));
   debugScopes.push_back(op);
   il.debugScope = op;
 }
@@ -2111,7 +2204,8 @@ LogicalResult Inliner::inlineModules() {
   // Delete debug scopes that ended up unused.
   // Erase in reverse: back scopes may have uses on front scopes.
   for (auto scopeOp : llvm::reverse(debugScopes))
-    if (scopeOp.use_empty())
+    if (scopeOp.use_empty() && !scopeOp.getInnerSymAttr() &&
+        !scopeOp.getDefAttr())
       scopeOp.erase();
   debugScopes.clear();
 
@@ -2122,6 +2216,8 @@ void Inliner::eraseDeadModules() {
   for (auto mod : llvm::make_early_inc_range(circuit.getOps<FModuleLike>())) {
     if (inliningFacts.isKnownLive(mod))
       continue;
+    if (auto info = debug::getModuleDescription(mod))
+      info.removeImplAttr();
     mod.erase();
     ++stats.deadModules;
   }
@@ -2441,6 +2537,54 @@ void Inliner::writebackHierPaths() {
 //===----------------------------------------------------------------------===//
 
 namespace {
+static LogicalResult normalizeInstanceDescriptionPaths(CircuitOp circuit) {
+  SymbolTable symbols(circuit);
+  CircuitNamespace names(circuit);
+  DenseMap<Attribute, FlatSymbolRefAttr> normalized;
+  for (auto module : circuit.getOps<FModuleOp>()) {
+    WalkResult result = module.walk([&](debug::ValueOp scope) {
+      auto ref = scope.getPathAttr();
+      if (!ref)
+        return WalkResult::advance();
+      if (auto found = normalized.find(ref); found != normalized.end()) {
+        scope.setPathAttr(found->second);
+        return WalkResult::advance();
+      }
+      auto path = symbols.lookup<hw::HierPathOp>(ref.getValue());
+      if (!path)
+        return scope.emitError("missing instance description path"),
+               WalkResult::interrupt();
+      auto steps = llvm::to_vector(path.getNamepath());
+      if (!isa<FlatSymbolRefAttr>(steps.back()))
+        return WalkResult::advance();
+      steps.pop_back();
+      if (steps.empty())
+        return scope.emitError("instance description path has no target"),
+               WalkResult::interrupt();
+      auto uses = SymbolTable::getSymbolUses(path, circuit);
+      if (uses && llvm::all_of(*uses, [](const SymbolTable::SymbolUse &use) {
+            return isa<debug::ValueOp>(use.getUser());
+          })) {
+        path.setNamepathAttr(ArrayAttr::get(circuit.getContext(), steps));
+        return WalkResult::advance();
+      }
+      OpBuilder builder(path);
+      auto copy = hw::HierPathOp::create(
+          builder, path.getLoc(),
+          builder.getStringAttr(names.newName(path.getSymName() + "_debug")),
+          path.getSymVisibilityAttr(), builder.getArrayAttr(steps));
+      symbols.insert(copy);
+      auto replacement = FlatSymbolRefAttr::get(copy.getSymNameAttr());
+      normalized[ref] = replacement;
+      scope.setPathAttr(replacement);
+      return WalkResult::advance();
+    });
+    if (result.wasInterrupted())
+      return failure();
+  }
+  return success();
+}
+
 /// The FIRRTL inliner pass.
 ///
 /// Runs InliningFacts (P1), NLAPlanner (P2), and Inliner (P3/P4) in sequence.
@@ -2450,6 +2594,8 @@ class InlinerPass : public circt::firrtl::impl::InlinerBase<InlinerPass> {
   void runOnOperation() override {
     CIRCT_DEBUG_SCOPED_PASS_LOGGER(this);
     auto circuit = getOperation();
+    if (failed(normalizeInstanceDescriptionPaths(circuit)))
+      return signalPassFailure();
     auto &symbolTable = getAnalysis<SymbolTable>();
     auto &instanceGraph = getAnalysis<InstanceGraph>();
 
@@ -2477,7 +2623,8 @@ class InlinerPass : public circt::firrtl::impl::InlinerBase<InlinerPass> {
 
     // Run Inlining: Clone (P3), and writeback (P4).
     CircuitNamespace circuitNamespace(circuit);
-    Inliner inliner(circuit, symbolTable, circuitNamespace, *facts, nlaPlanner);
+    Inliner inliner(circuit, symbolTable, circuitNamespace, *facts, nlaPlanner,
+                    emitDebugInfo);
     if (failed(inliner.run()))
       signalPassFailure();
 

@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAttributes.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
@@ -87,6 +88,36 @@ static bool operator==(const ModuleInfo &lhs, const ModuleInfo &rhs) {
          lhs.referredModuleNames == rhs.referredModuleNames;
 }
 
+/// Check whether an attribute of an operation can be ignored when comparing
+/// modules.
+static bool isNonessential(const DenseSet<Attribute> &nonessentialAttributes,
+                           Operation *op, StringAttr attrName) {
+  if (isa_and_nonnull<debug::DebugDialect>(op->getDialect()) &&
+      attrName == "name")
+    return false;
+  return nonessentialAttributes.contains(attrName);
+}
+
+/// Compare local debug paths by their target, not their circuit symbol name.
+static hw::InnerRefAttr getLocalDebugTarget(Operation *op, Attribute attr) {
+  auto value = dyn_cast<debug::ValueOp>(op);
+  if (!value || attr != value.getPathAttr())
+    return {};
+  auto path = SymbolTable::lookupNearestSymbolFrom<hw::HierPathOp>(
+      op, value.getPathAttr());
+  if (!path)
+    return {};
+  auto steps = path.getNamepath();
+  if (steps.size() != 1 &&
+      !(steps.size() == 2 && isa<FlatSymbolRefAttr>(steps[1])))
+    return {};
+  auto ref = dyn_cast<hw::InnerRefAttr>(steps[0]);
+  auto module = op->getParentOfType<FModuleOp>();
+  return ref && module && ref.getModule() == module.getNameAttr()
+             ? ref
+             : hw::InnerRefAttr();
+}
+
 /// This struct contains constant string attributes shared across different
 /// threads.
 struct StructuralHasherSharedConstants {
@@ -126,9 +157,11 @@ struct StructuralHasher {
   explicit StructuralHasher(const StructuralHasherSharedConstants &constants)
       : constants(constants) {}
 
-  ModuleInfo getModuleInfo(FModuleLike module) {
+  ModuleInfo getModuleInfo(FModuleLike module, ArrayRef<Attribute> sourceInfo) {
     populateInnerSymIDTable(module);
     update(&(*module));
+    for (auto attr : sourceInfo)
+      update(attr.getAsOpaquePointer());
     return {sha.final(), std::move(referredModuleNames)};
   }
 
@@ -240,7 +273,7 @@ private:
       auto value = namedAttr.getValue();
 
       // Skip names and annotations.
-      if (constants.nonessentialAttributes.contains(name))
+      if (isNonessential(constants.nonessentialAttributes, op, name))
         continue;
 
       // Hash the attribute name (an interned pointer).
@@ -275,6 +308,11 @@ private:
       // See https://github.com/llvm/circt/issues/6583.
       if (isa<DistinctAttr>(value))
         continue;
+
+      if (auto target = getLocalDebugTarget(op, value)) {
+        update(getInnerSymID(target.getName()));
+        continue;
+      }
 
       // If this is an symbol reference, we need to perform name erasure.
       if (auto innerRef = dyn_cast<hw::InnerRefAttr>(value)) {
@@ -628,7 +666,7 @@ struct Equivalence {
     DenseSet<Attribute> seenAttrs;
     for (auto namedAttr : aDict) {
       auto attrName = namedAttr.getName();
-      if (nonessentialAttributes.contains(attrName))
+      if (isNonessential(nonessentialAttributes, a, attrName))
         continue;
 
       auto aAttr = namedAttr.getValue();
@@ -640,6 +678,10 @@ struct Equivalence {
         return diag;
       }
 
+      if (auto target = getLocalDebugTarget(a, aAttr))
+        aAttr = target;
+      if (auto target = getLocalDebugTarget(b, bAttr))
+        bAttr = target;
       if (isa<hw::InnerRefAttr>(aAttr) && isa<hw::InnerRefAttr>(bAttr)) {
         auto bRef = cast<hw::InnerRefAttr>(bAttr);
         auto aRef = cast<hw::InnerRefAttr>(aAttr);
@@ -692,7 +734,7 @@ struct Equivalence {
         auto attrName = namedAttr.getName();
         // Skip the attribute if we don't care about this particular one or it
         // is one that is known to be in both dictionaries.
-        if (nonessentialAttributes.contains(attrName) ||
+        if (isNonessential(nonessentialAttributes, b, attrName) ||
             seenAttrs.contains(attrName))
           continue;
         // We have found an attribute that is only in the second operation.
@@ -1076,6 +1118,17 @@ private:
       oldInstRec->getParent()->addInstance(inst, toNode);
       oldInstRec->erase();
     }
+    auto fromName = SymbolTable::getSymbolName(fromModule);
+    fromModule->getParentOp()->walk([&](debug::ModuleInfoOp info) {
+      if (auto ref = info.getImplAttr(); ref && ref.getAttr() == fromName) {
+        if (auto target = debug::getModuleDescription(toModule)) {
+          (void)SymbolTable::replaceAllSymbolUses(info, target.getSymNameAttr(),
+                                                  fromModule->getParentOp());
+          info.erase();
+        } else
+          info.setImplAttr(toModuleRef);
+      }
+    });
     instanceGraph.erase(fromNode);
     fromModule->erase();
   }
@@ -1668,6 +1721,15 @@ class DedupPass : public circt::firrtl::impl::DedupBase<DedupPass> {
     });
     LLVM_DEBUG(llvm::dbgs() << "Found " << modules.size() << " modules\n");
 
+    DenseMap<StringAttr, SmallVector<Attribute>> sourceInfos;
+    circuit.walk([&](debug::ModuleInfoOp info) {
+      if (auto module = info.getImplAttr()) {
+        auto &attrs = sourceInfos[module.getAttr()];
+        attrs.push_back(info.getTypeAttr());
+        attrs.push_back(info.getExtAttr() ? Attribute(info.getExtAttr())
+                                          : UnitAttr::get(context));
+      }
+    });
     SmallVector<std::optional<ModuleInfo>> moduleInfos(modules.size());
     StructuralHasherSharedConstants hasherConstants(&getContext());
 
@@ -1717,7 +1779,8 @@ class DedupPass : public circt::firrtl::impl::DedupBase<DedupPass> {
 
           StructuralHasher hasher(hasherConstants);
           // Calculate the hash of the module and referred module names.
-          moduleInfos[idx] = hasher.getModuleInfo(module);
+          moduleInfos[idx] = hasher.getModuleInfo(
+              module, sourceInfos.lookup(module.getModuleNameAttr()));
           return success();
         });
 

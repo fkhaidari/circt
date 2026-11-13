@@ -1,3 +1,6 @@
+// RUN: circt-opt --firrtl-dedup %s | FileCheck %s --check-prefix=META
+  // META-DAG: dbg.module @{{[^ ]+}} type "A" ext "{\22x-test\22:1}" impl @ExtA
+  // META-DAG: dbg.module @{{[^ ]+}} type "B" impl @ExtB
 // RUN: circt-opt --firrtl-dedup %s | FileCheck %s
 
 // CHECK-LABEL: firrtl.circuit "Empty"
@@ -1020,5 +1023,129 @@ firrtl.circuit "PublicModuleNoDedup" {
   }
   firrtl.module @PublicModuleNoDedup() {
     firrtl.instance bar sym @sym @Bar_2()
+  }
+}
+
+// Modules whose debug variables have different names must not dedup.
+// CHECK-LABEL: firrtl.circuit "DebugNamesDiffer"
+firrtl.circuit "DebugNamesDiffer" {
+  // CHECK: firrtl.module private @DbgA
+  firrtl.module private @DbgA(in %i: !firrtl.uint<1>) {
+    dbg.variable "a", %i : !firrtl.uint<1>
+  }
+  // CHECK: firrtl.module private @DbgB
+  firrtl.module private @DbgB(in %i: !firrtl.uint<1>) {
+    dbg.variable "b", %i : !firrtl.uint<1>
+  }
+  firrtl.module @DebugNamesDiffer() {
+    // CHECK: firrtl.instance a @DbgA
+    // CHECK-NEXT: firrtl.instance b @DbgB
+    %a_i = firrtl.instance a @DbgA(in i: !firrtl.uint<1>)
+    %b_i = firrtl.instance b @DbgB(in i: !firrtl.uint<1>)
+  }
+}
+
+// FIRRTL op names stay nonessential.
+// CHECK-LABEL: firrtl.circuit "DebugNamesSameNodeNamesDiffer"
+firrtl.circuit "DebugNamesSameNodeNamesDiffer" {
+  // CHECK: firrtl.module private @DbgE
+  firrtl.module private @DbgE(in %i: !firrtl.uint<1>) {
+    %x = firrtl.node %i : !firrtl.uint<1>
+    dbg.variable "a", %x : !firrtl.uint<1>
+  }
+  // CHECK-NOT: firrtl.module private @DbgF
+  firrtl.module private @DbgF(in %i: !firrtl.uint<1>) {
+    %y = firrtl.node %i : !firrtl.uint<1>
+    dbg.variable "a", %y : !firrtl.uint<1>
+  }
+  firrtl.module @DebugNamesSameNodeNamesDiffer() {
+    // CHECK: firrtl.instance e @DbgE
+    // CHECK-NEXT: firrtl.instance f @DbgE
+    %e_i = firrtl.instance e @DbgE(in i: !firrtl.uint<1>)
+    %f_i = firrtl.instance f @DbgF(in i: !firrtl.uint<1>)
+  }
+}
+
+// Modules whose dbg.module differ must not dedup.
+// CHECK-LABEL: firrtl.circuit "ModuleInfoDiffer"
+firrtl.circuit "ModuleInfoDiffer" {
+  // CHECK: firrtl.module private @InfoA
+  dbg.module @debug1 type "A" impl @InfoA
+  firrtl.module private @InfoA() {
+
+  }
+  // CHECK: firrtl.module private @InfoB
+  dbg.module @debug2 type "B" impl @InfoB
+  firrtl.module private @InfoB() {
+
+  }
+  firrtl.module @ModuleInfoDiffer() {
+    // CHECK: firrtl.instance a @InfoA
+    // CHECK-NEXT: firrtl.instance b @InfoB
+    firrtl.instance a @InfoA()
+    firrtl.instance b @InfoB()
+  }
+}
+
+// Modules whose instances use their own local dbg.scope dedup. A module whose
+// instance has no scope differs from them.
+// CHECK-LABEL: firrtl.circuit "InstanceScope"
+firrtl.circuit "InstanceScope" {
+  hw.hierpath private @scope_a_path [@ScopeA::@l]
+  hw.hierpath private @scope_b_path [@ScopeB::@l]
+  firrtl.module private @ScopeLeaf() {}
+  // CHECK: firrtl.module private @ScopeA
+  // CHECK-NEXT: [[S:%.+]] = dbg.scope "c"
+  // CHECK: firrtl.instance l{{.*}} @ScopeLeaf()
+  firrtl.module private @ScopeA() {
+    %0 = dbg.scope "c"
+    %instance_value_1 = dbg.value path @scope_a_path type "ScopeLeaf"
+    dbg.variable "l", %instance_value_1 scope %0 : !dbg.value
+    firrtl.instance l sym @l @ScopeLeaf()
+  }
+  // CHECK-NOT: firrtl.module private @ScopeB
+  firrtl.module private @ScopeB() {
+    %0 = dbg.scope "c"
+    %instance_value_2 = dbg.value path @scope_b_path type "ScopeLeaf"
+    dbg.variable "l", %instance_value_2 scope %0 : !dbg.value
+    firrtl.instance l sym @l @ScopeLeaf()
+  }
+  // CHECK: firrtl.module private @ScopeE
+  firrtl.module private @ScopeE() {
+    %0 = dbg.scope "c"
+    firrtl.instance l @ScopeLeaf()
+  }
+  firrtl.module @InstanceScope() {
+    // CHECK: firrtl.instance a{{.*}} @ScopeA
+    // CHECK-NEXT: firrtl.instance b{{.*}} @ScopeA
+    // CHECK-NEXT: firrtl.instance e @ScopeE
+    firrtl.instance a @ScopeA()
+    firrtl.instance b @ScopeB()
+    firrtl.instance e @ScopeE()
+  }
+}
+
+// External source metadata participates in dedup without hardware attributes.
+// CHECK-LABEL: firrtl.circuit "SourceNameDiffer"
+firrtl.circuit "SourceNameDiffer" {
+  dbg.module @debug3 type "A" ext "{\22x-test\22:1}" impl @ExtA
+
+  dbg.module @debug4 type "B" impl @ExtB
+
+  dbg.module @debug5 type "A" ext "{\22x-test\22:1}" impl @ExtCopy
+
+  // CHECK: firrtl.extmodule private @ExtA() attributes {defname = "BB"}
+  firrtl.extmodule private @ExtA() attributes {defname = "BB"}
+  // CHECK: firrtl.extmodule private @ExtB() attributes {defname = "BB"}
+  firrtl.extmodule private @ExtB() attributes {defname = "BB"}
+  // CHECK-NOT: firrtl.extmodule private @ExtCopy
+  firrtl.extmodule private @ExtCopy() attributes {defname = "BB"}
+  firrtl.module @SourceNameDiffer() {
+    // CHECK: firrtl.instance a @ExtA
+    // CHECK-NEXT: firrtl.instance b @ExtB
+    // CHECK-NEXT: firrtl.instance copy @ExtA
+    firrtl.instance a @ExtA()
+    firrtl.instance b @ExtB()
+    firrtl.instance copy @ExtCopy()
   }
 }

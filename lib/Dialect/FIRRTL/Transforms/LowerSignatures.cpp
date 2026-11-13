@@ -474,11 +474,12 @@ static void lowerModuleBody(FModuleOp mod,
           fixupInstance(inst, [&](ImplicitLocOpBuilder &theBuilder,
                                   InstanceOp inst,
                                   ArrayRef<PortInfo> newPorts) {
-            return InstanceOp::create(
+            auto newInst = InstanceOp::create(
                 theBuilder, newPorts, inst.getModuleName(), inst.getName(),
                 inst.getNameKind(), inst.getAnnotations().getValue(),
                 inst.getLayers(), inst.getLowerToBind(), inst.getDoNotPrint(),
                 inst.getInnerSymAttr());
+            return newInst;
           });
         })
         .Case<InstanceChoiceOp>([&](auto inst) {

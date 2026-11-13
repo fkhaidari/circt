@@ -258,3 +258,103 @@ ModuleInfoOp circt::debug::getOrCreateModuleDescription(Operation *module,
 }
 
 std::optional<size_t> ScopeOp::getTargetResultIndex() { return std::nullopt; }
+
+bool circt::debug::updateImplicitScope(Operation *op, Value scope) {
+  auto update = [&](auto op) {
+    if (scope && !op.getScope())
+      op.getScopeMutable().assign(scope);
+  };
+  if (auto variable = dyn_cast<VariableOp>(op))
+    update(variable);
+  else if (auto nested = dyn_cast<ScopeOp>(op))
+    update(nested);
+  return isa_and_nonnull<DebugDialect>(op->getDialect());
+}
+
+void circt::debug::finalizeInstanceDescriptions(Operation *root) {
+  SmallVector<VariableOp> descriptions;
+  DenseMap<Attribute, unsigned> localAliases;
+  root->walk([&](VariableOp variable) {
+    auto value = variable.getValue().getDefiningOp<ValueOp>();
+    if (!value || !value.getPathAttr())
+      return;
+    descriptions.push_back(variable);
+    auto path = SymbolTable::lookupNearestSymbolFrom<hw::HierPathOp>(
+        value, value.getPathAttr());
+    if (path && path.getNamepath().size() == 1)
+      ++localAliases[path.getNamepath()[0]];
+  });
+  for (auto variable : descriptions) {
+    auto value = variable.getValue().getDefiningOp<ValueOp>();
+    auto path = SymbolTable::lookupNearestSymbolFrom<hw::HierPathOp>(
+        value, value.getPathAttr());
+    if (!path)
+      continue;
+    auto names = path.getNamepath();
+    if (names.empty())
+      continue;
+    Attribute last = names[names.size() - 1];
+    if (isa<FlatSymbolRefAttr>(last) && names.size() > 1)
+      last = names[names.size() - 2];
+    auto ref = dyn_cast<hw::InnerRefAttr>(last);
+    if (!ref)
+      continue;
+    auto *module = SymbolTable::lookupNearestSymbolFrom(
+        path, FlatSymbolRefAttr::get(ref.getModule()));
+    if (!module)
+      continue;
+    ScopeOp target;
+    module->walk([&](ScopeOp scope) {
+      if (auto sym = scope.getInnerSymAttr();
+          sym && sym.getSymName() == ref.getName())
+        target = scope;
+    });
+    if (!target)
+      continue;
+
+    // Nonlocal paths retain the instance route to the inlined body.
+    if (names.size() != 1 || target->getBlock() != variable->getBlock())
+      continue;
+    if (localAliases.lookup(last) != 1)
+      continue;
+    ScopeOp scope = target;
+    if (auto parent = variable.getScope()) {
+      SmallVector<ScopeOp> parents;
+      for (auto current = parent.getDefiningOp<ScopeOp>(); current;
+           current = current.getScope().getDefiningOp<ScopeOp>()) {
+        parents.push_back(current);
+        if (current == target)
+          break;
+        if (!current.getScope())
+          break;
+      }
+      if (llvm::is_contained(parents, target))
+        continue;
+      for (auto parentScope : llvm::reverse(parents))
+        if (parentScope->getBlock() == target->getBlock() &&
+            target->isBeforeInBlock(parentScope))
+          parentScope->moveBefore(target);
+    }
+    if (auto parent = variable.getScope())
+      scope.getScopeMutable().assign(parent);
+    else
+      scope.getScopeMutable().clear();
+    scope.setNameAttr(variable.getNameAttr());
+    if (auto definition = value.getDefAttr())
+      scope.setDefAttr(definition);
+    if (auto ref = value.getDefAttr()) {
+      auto info =
+          SymbolTable::lookupNearestSymbolFrom<ModuleInfoOp>(value, ref);
+      if (info &&
+          ((value.getTypeAttr() && value.getTypeAttr() != info.getTypeAttr()) ||
+           (value.getExtAttr() && value.getExtAttr() != info.getExtAttr())))
+        continue;
+    } else if (value.getTypeAttr() || value.getExtAttr())
+      continue;
+    variable.erase();
+    if (value->use_empty())
+      value.erase();
+    if (path.isPrivate() && SymbolTable::symbolKnownUseEmpty(path, root))
+      path.erase();
+  }
+}
