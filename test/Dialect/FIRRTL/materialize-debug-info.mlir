@@ -1,4 +1,4 @@
-// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl.module(firrtl-materialize-debug-info)))' --verify-diagnostics %s | FileCheck %s
+// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl-materialize-debug-info))' --verify-diagnostics %s | FileCheck %s
 
 firrtl.circuit "Ports" {
 
@@ -114,4 +114,16 @@ firrtl.module @Described(
   %n = firrtl.node %q : !firrtl.uint<1>
 }
 
+}
+
+firrtl.circuit "DescribedInstance" {
+  dbg.module @LeafDebug type "SourceLeaf" impl @Leaf
+  hw.hierpath private @leaf_path [@DescribedInstance::@leaf]
+  firrtl.module @DescribedInstance() {
+    firrtl.instance leaf sym @leaf @Leaf()
+    // CHECK: dbg.value path @leaf_path def @LeafDebug{{$}}
+    %v = dbg.value path @leaf_path type "SourceLeaf"
+    dbg.variable "leaf", %v kind instance : !dbg.value
+  }
+  firrtl.module private @Leaf() {}
 }

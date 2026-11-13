@@ -800,7 +800,7 @@ def LayerSink : Pass<"firrtl-layer-sink", "firrtl::CircuitOp"> {
 }
 
 def MaterializeDebugInfo :
-    Pass<"firrtl-materialize-debug-info", "firrtl::FModuleOp"> {
+    Pass<"firrtl-materialize-debug-info", "firrtl::CircuitOp"> {
   let summary = "Generate debug ops to track FIRRTL values";
   let description = [{
     This pass creates debug ops to track FIRRTL-level ports, nodes, wires,

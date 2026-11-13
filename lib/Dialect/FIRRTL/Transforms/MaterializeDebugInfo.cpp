@@ -35,6 +35,7 @@ struct MaterializeDebugInfoPass
           MaterializeDebugInfoPass> {
   using MaterializeDebugInfoBase::MaterializeDebugInfoBase;
   void runOnOperation() override;
+  void materializeModule(FModuleOp module, SymbolTable &symbols);
   void materializeVariable(OpBuilder &builder, StringAttr name, Value value,
                            debug::VariableKind kind,
                            const DenseSet<Value> &describedRoots);
@@ -44,8 +45,74 @@ struct MaterializeDebugInfoPass
 } // namespace
 
 void MaterializeDebugInfoPass::runOnOperation() {
-  auto module = getOperation();
+  SymbolTable symbols(getOperation());
+  for (auto module : getOperation().getOps<FModuleOp>())
+    materializeModule(module, symbols);
+}
+
+void MaterializeDebugInfoPass::materializeModule(FModuleOp module,
+                                                 SymbolTable &symbols) {
   auto builder = OpBuilder::atBlockBegin(module.getBodyBlock());
+  hw::InnerSymbolNamespace names(module);
+  DenseSet<Attribute> describedInstances;
+  module.walk([&](debug::ValueOp value) {
+    if (auto ref = value.getPathAttr()) {
+      auto path = symbols.lookup<hw::HierPathOp>(ref.getValue());
+      if (!path)
+        return;
+      auto steps = path.getNamepath();
+      if (steps.size() != 1 &&
+          !(steps.size() == 2 && isa<FlatSymbolRefAttr>(steps[1])))
+        return;
+      auto target = dyn_cast<hw::InnerRefAttr>(steps[0]);
+      if (target && target.getModule() == module.getNameAttr()) {
+        describedInstances.insert(target);
+        module.walk([&](InstanceOp instance) {
+          auto sym = instance.getInnerSymAttr();
+          if (!sym || sym.getSymName() != target.getName())
+            return;
+          if (auto *callee = symbols.lookup(instance.getModuleName()))
+            if (auto info = debug::getModuleDescription(callee)) {
+              value.setDefAttr(FlatSymbolRefAttr::get(info.getSymNameAttr()));
+              value.removeTypeAttr();
+            }
+        });
+      }
+    }
+  });
+  auto describe = [&](Operation *op, hw::InnerRefAttr ref, StringAttr name,
+                      StringAttr typeName) {
+    OpBuilder pathBuilder =
+        OpBuilder::atBlockEnd(getOperation().getBodyBlock());
+    auto path = hw::HierPathOp::create(
+        pathBuilder, op->getLoc(), pathBuilder.getStringAttr("debug_instance"),
+        pathBuilder.getStringAttr("private"), pathBuilder.getArrayAttr({ref}));
+    symbols.insert(path);
+    builder.setInsertionPointAfter(op);
+    auto value = debug::ValueOp::create(
+        builder, op->getLoc(), debug::ValueType::get(&getContext()), Value(),
+        typeName, StringAttr(), FlatSymbolRefAttr::get(path.getSymNameAttr()));
+    if (auto instance = dyn_cast<InstanceOp>(op))
+      if (auto *target = symbols.lookup(instance.getModuleName()))
+        if (auto info = debug::getModuleDescription(target)) {
+          value.setDefAttr(FlatSymbolRefAttr::get(info.getSymNameAttr()));
+          value.removeTypeAttr();
+        }
+    debug::VariableOp::create(
+        builder, op->getLoc(), name, value, Value(),
+        debug::VariableKindAttr::get(builder.getContext(),
+                                     debug::VariableKind::Instance));
+  };
+  module.walk([&](InstanceOp instance) {
+    auto ref =
+        getInnerRefTo(instance, [&](FModuleLike) -> auto & { return names; });
+    if (!describedInstances.insert(ref).second)
+      return;
+    auto typeName = instance.getModuleNameAttr().getAttr();
+    describe(instance, ref, instance.getNameAttr(), typeName);
+  });
+  builder.setInsertionPointToStart(module.getBodyBlock());
+
   // Collect the FieldRef roots of the FIRRTL values that existing Debug ops
   // point at, for example those converted from the frontend's intrinsics.
   DenseSet<Value> describedRoots;

@@ -46,8 +46,7 @@ LogicalResult firtool::populatePreprocessTransforms(mlir::PassManager &pm,
       {/*emitDebugInfo=*/opt.shouldEnableDebugInfo()}));
 
   if (opt.shouldEnableDebugInfo())
-    pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
-        firrtl::createMaterializeDebugInfo());
+    pm.nest<firrtl::CircuitOp>().addPass(firrtl::createMaterializeDebugInfo());
 
   return success();
 }
