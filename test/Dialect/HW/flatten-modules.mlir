@@ -1,3 +1,10 @@
+dbg.module @ValueDefinition2 type "SourceChild"
+dbg.module @ValueDefinition1 type "SourceClass"
+dbg.module @ValueDefinition0 type "DebugLeafOnly"
+// RUN: circt-opt %s --hw-flatten-modules | FileCheck %s --check-prefix=META
+  // META-DAG: dbg.module @{{[^ ]+}} type "SourceClass"
+  hw.hierpath private @inliner_desc_0 [@DebugScoped::@child]
+  hw.hierpath private @inliner_desc_1 [@LateDescription::@child]
 // RUN: circt-opt %s --hw-flatten-modules | FileCheck %s
 
 
@@ -82,7 +89,7 @@ hw.module private @NamesC() {
 // CHECK-LABEL: hw.module @ExtModuleA
 hw.module @ExtModuleA() {
   // CHECK-NEXT: hw.instance "c0" @ExtModuleC
-  // CHECK-NEXT: hw.instance "b/c1" @ExtModuleC
+  // CHECK: hw.instance "b/c1" sym @"b/c1" @ExtModuleC
   hw.instance "c0" @ExtModuleC() -> ()
   hw.instance "b" @ExtModuleB() -> ()
 }
@@ -90,3 +97,78 @@ hw.module private @ExtModuleB() {
   hw.instance "c1" @ExtModuleC() -> ()
 }
 hw.module.extern private @ExtModuleC()
+
+
+// Debug info of inlined modules is placed in a scope per inlined instance.
+// CHECK-LABEL: hw.module @DebugTop
+hw.module @DebugTop(in %x: i4, out y: i4) {
+  // CHECK-NEXT: dbg.variable "top_x", %x : i4
+  // CHECK-NEXT: %[[S0:.+]] = dbg.scope "mid" def @[[MIDDEF:[a-zA-Z0-9_]+]]{{$}}
+  // CHECK-NEXT: dbg.variable "mid_x", %x scope %[[S0]] : i4
+  // CHECK-NEXT: %[[DEEP:.*]] = dbg.value path @{{.*}} type "DebugExt"
+  // CHECK-NEXT: dbg.variable "deep", %[[DEEP]] scope %[[S0]] kind instance : !dbg.value
+  // CHECK-NEXT: hw.instance "mid/deep" sym @{{.*}} @DebugExt(a: %x: i4) -> ()
+  // CHECK-NEXT: %[[S1:.+]] = dbg.scope "leaf" scope %[[S0]]
+  // CHECK-NEXT: dbg.variable "leaf_x", %x scope %[[S1]] : i4
+  dbg.variable "top_x", %x : i4
+  %0 = hw.instance "mid" @DebugMid(x: %x: i4) -> (y: i4)
+  hw.output %0 : i4
+}
+// CHECK-NOT: hw.module private @DebugMid
+hw.module private @DebugMid(in %x: i4, out y: i4) {
+  dbg.variable "mid_x", %x : i4
+  hw.instance "deep" @DebugExt(a: %x: i4) -> ()
+  %0 = hw.instance "leaf" @DebugLeaf(x: %x: i4) -> (y: i4)
+  hw.output %0 : i4
+}
+hw.module private @DebugLeaf(in %x: i4, out y: i4) {
+  dbg.variable "leaf_x", %x : i4
+  hw.output %x : i4
+}
+hw.module.extern private @DebugExt(in %a: i4)
+
+// An inlined instance that was already scoped nests its scope in the parent.
+// CHECK-LABEL: hw.module @DebugScoped
+hw.module @DebugScoped(in %x: i4) {
+  // CHECK: %[[P:.+]] = dbg.scope "p"
+  // CHECK: %[[C:.+]] = dbg.scope "c" scope %[[P]] sym @child
+  // CHECK: dbg.variable "v", %x scope %[[C]] : i4
+  %p = dbg.scope "p"
+  %child = dbg.value path @inliner_desc_0 def @ValueDefinition0
+  dbg.variable "c", %child scope %p : !dbg.value
+  hw.instance "c" sym @child @DebugLeafOnly(x: %x: i4) -> ()
+}
+hw.module private @DebugLeafOnly(in %x: i4) {
+  dbg.variable "v", %x : i4
+}
+
+hw.hierpath private @debugChild [@PathTop::@wrapper, @PathWrapper::@child, @PathChild]
+// CHECK-NOT: hw.hierpath private @debugChild
+// CHECK-LABEL: hw.module @PathTop
+hw.module @PathTop(in %x: i4) {
+  // CHECK: %[[SOURCE:.*]] = dbg.scope "sourceChild" {{.*}}sym @child
+  %description = dbg.value path @debugChild def @ValueDefinition1
+  dbg.variable "sourceChild", %description : !dbg.value
+  hw.instance "wrapper" sym @wrapper @PathWrapper(x: %x: i4) -> ()
+}
+hw.module private @PathWrapper(in %x: i4) {
+  hw.instance "child" sym @child @PathChild(x: %x: i4) -> ()
+}
+hw.module private @PathChild(in %x: i4) {
+  dbg.variable "value", %x : i4
+}
+// CHECK: dbg.variable "value", %x scope
+// CHECK-NOT: hw.module private @Path
+
+// CHECK-LABEL: hw.module @LateDescription
+hw.module @LateDescription(in %x: i4) {
+  hw.instance "child" sym @child @LateChild(x: %x: i4) -> ()
+  %description = dbg.value path @inliner_desc_1 def @ValueDefinition2
+  dbg.variable "sourceChild", %description : !dbg.value
+}
+hw.module private @LateChild(in %x: i4) {
+  dbg.variable "x", %x : i4
+}
+// CHECK: %[[BODY:.*]] = dbg.scope "sourceChild" sym @child
+// CHECK: dbg.variable "x", %x scope %[[BODY]]
+// CHECK-NOT: dbg.value path

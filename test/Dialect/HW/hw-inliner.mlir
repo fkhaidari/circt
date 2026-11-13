@@ -233,6 +233,7 @@ hw.hierpath private @HierPathTest [@InlineWithHierPath::@inst, @ChildWithHierPat
 // CHECK-LABEL: hw.module @InlineWithHierPath
 hw.module @InlineWithHierPath(in %x: i4, out y: i4) {
   // CHECK-NOT: hw.instance
+  // CHECK-NEXT: %{{.+}} = dbg.scope "inst" sym @inst
   // CHECK-NEXT: %[[V0:.+]] = comb.add %x, %x
   // CHECK-NEXT: %[[W0:.+]] = hw.wire %[[V0]] sym @[[WIRE_SYM]]
   // CHECK-NEXT: hw.output %[[W0]]

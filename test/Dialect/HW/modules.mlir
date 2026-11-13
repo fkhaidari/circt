@@ -1,3 +1,5 @@
+// RUN: circt-opt %s -verify-diagnostics | circt-opt -verify-diagnostics | FileCheck %s --check-prefix=META
+// META-DAG: dbg.module @{{[^ ]+}} type "my.pkg.BB" impl @SourceName
 // RUN: circt-opt %s -verify-diagnostics | circt-opt -verify-diagnostics | FileCheck %s
 
 hw.module @B(in %a: i1, out nameOfPortInSV: i1, out "": i1) {
@@ -17,6 +19,11 @@ hw.module.extern @C(in %nameOfPortInSV: i1, out "": i1, out "": i1)
 
 hw.module.extern @explicitResultName(out FOO: i1)
 // CHECK-LABEL: hw.module.extern @explicitResultName(out FOO : i1)
+
+hw.module.extern @SourceName(in %a: i1)
+// CHECK-LABEL: hw.module.extern @SourceName(in %a : i1)
+dbg.module @debug1 type "my.pkg.BB" impl @SourceName
+
 
 hw.module.extern @D_ATTR(in %a: i1, out "": i1, out "": i1) attributes {filename = "test.v", p = {DEFAULT = 0 : i64}}
 

@@ -16,6 +16,7 @@ add_circt_dialect_library(CIRCTHWTransforms
   CIRCTHWTransformsIncGen
 
   LINK_LIBS PUBLIC
+  CIRCTDebug
   CIRCTHW
   CIRCTSV
   CIRCTSeq

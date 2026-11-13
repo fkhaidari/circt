@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Dialect/Debug/DebugOps.h"
 #include "circt/Dialect/HW/HWInstanceGraph.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/HW/HWPasses.h"
@@ -66,17 +67,19 @@ struct PrefixingInliner : public InlinerInterface {
   mlir::AttrTypeReplacer *replacer;
   HierPathTable *pathsTable;
   hw::InnerRefAttr instanceRef;
+  /// Debug scope of the inlined instance, or null if none was created.
+  Value debugScope;
 
   PrefixingInliner(MLIRContext *context, StringRef prefix,
                    InnerSymbolNamespace *ns, HWModuleOp parentModule,
                    HWModuleOp sourceModule,
                    DenseMap<StringAttr, StringAttr> *symMapping,
                    mlir::AttrTypeReplacer *replacer, HierPathTable *pathsTable,
-                   hw::InnerRefAttr instanceRef)
+                   hw::InnerRefAttr instanceRef, Value debugScope)
       : InlinerInterface(context), prefix(prefix), ns(ns),
         parentModule(parentModule), sourceModule(sourceModule),
         symMapping(symMapping), replacer(replacer), pathsTable(pathsTable),
-        instanceRef(instanceRef) {}
+        instanceRef(instanceRef), debugScope(debugScope) {}
 
   bool isLegalToInline(Region *dest, Region *src, bool wouldBeCloned,
                        IRMapping &valueMapping) const override {
@@ -97,12 +100,66 @@ struct PrefixingInliner : public InlinerInterface {
       iterator_range<Region::iterator> inlinedBlocks) override {
     for (Block &block : inlinedBlocks)
       block.walk([&](Operation *op) {
-        updateNames(op);
+        // Debug operations are placed in the instance's scope instead of
+        // being renamed.
+        auto instance = dyn_cast<InstanceOp>(op);
+        auto sourceName =
+            instance ? instance.getInstanceNameAttr() : StringAttr();
+        if (!debug::updateImplicitScope(op, debugScope))
+          updateNames(op);
         updateInnerSymbols(op);
+        if (instance && debugScope) {
+          if (!instance.getInnerSymAttr())
+            instance.setInnerSymAttr(hw::InnerSymAttr::get(StringAttr::get(
+                op->getContext(), ns->newName(instance.getInstanceName()))));
+          auto ref = instance.getInnerRef();
+          bool described = false;
+          parentModule.walk([&](debug::ValueOp value) {
+            if (auto pathRef = value.getPathAttr())
+              if (auto path = SymbolTable::lookupNearestSymbolFrom<HierPathOp>(
+                      value, pathRef))
+                described |= path.getNamepath().getValue().back() == ref;
+          });
+          if (!described) {
+            OpBuilder builder(instance);
+            auto root = parentModule->getParentOp();
+            SymbolTable symbols(root);
+            OpBuilder pathBuilder(op->getContext());
+            pathBuilder.setInsertionPointToStart(&root->getRegion(0).front());
+            auto path =
+                HierPathOp::create(pathBuilder, instance.getLoc(),
+                                   builder.getStringAttr("debug_path"),
+                                   StringAttr(), builder.getArrayAttr({ref}));
+            symbols.insert(path);
+            path.setPrivate();
+            auto value = debug::ValueOp::create(
+                builder, instance.getLoc(),
+                debug::ValueType::get(op->getContext()), Value(),
+                instance.getModuleNameAttr().getAttr(), StringAttr(),
+                FlatSymbolRefAttr::get(path.getSymNameAttr()));
+            debug::VariableOp::create(
+                builder, instance.getLoc(), sourceName, value, debugScope,
+                debug::VariableKindAttr::get(builder.getContext(),
+                                             debug::VariableKind::Instance));
+          }
+        }
       });
 
     // Update hierarchical paths that reference the inlined instance
     updateHierPaths();
+  }
+
+  /// Drop an unused scope after `inlineRegion`.
+  void finalizeDebugScope() {
+    auto scope = debugScope.getDefiningOp<debug::ScopeOp>();
+    if (debugScope.use_empty() && !scope.getInnerSymAttr() &&
+        !scope.getDefAttr())
+      scope.erase();
+    else if (!scope.getDefAttr()) {
+      auto info = debug::getOrCreateModuleDescription(
+          sourceModule, sourceModule.getModuleNameAttr());
+      scope.setDefAttr(FlatSymbolRefAttr::get(info.getSymNameAttr()));
+    }
   }
 
   void updateHierPaths() const {
@@ -118,9 +175,9 @@ struct PrefixingInliner : public InlinerInterface {
     // For each hierarchical path that references this instance
     for (hw::HierPathOp path : it->second) {
       SmallVector<Attribute, 4> newPath;
-      for (auto elem : path.getNamepath()) {
-        // Skip the instance reference being inlined
-        if (elem != instanceRef)
+      auto names = path.getNamepath();
+      for (auto [index, elem] : llvm::enumerate(names)) {
+        if (elem != instanceRef || index + 1 == names.size())
           newPath.push_back(replacer->replace(elem));
       }
       path.setNamepathAttr(ArrayAttr::get(path.getContext(), newPath));
@@ -207,6 +264,26 @@ void FlattenModulesPass::runOnOperation() {
   DenseSet<Operation *> handled;
 
   InlinerConfig config;
+
+  DenseSet<StringAttr> descriptionPaths;
+  getOperation().walk([&](debug::ValueOp scope) {
+    if (auto ref = scope.getPathAttr())
+      descriptionPaths.insert(ref.getAttr());
+  });
+  for (auto path : getOperation().getOps<hw::HierPathOp>()) {
+    if (!descriptionPaths.contains(path.getSymNameAttr()))
+      continue;
+    auto steps = llvm::to_vector(path.getNamepath());
+    if (steps.size() < 2 || !isa<FlatSymbolRefAttr>(steps.back()))
+      continue;
+    auto uses = SymbolTable::getSymbolUses(path, getOperation());
+    if (!uses || !llvm::all_of(*uses, [](const SymbolTable::SymbolUse &use) {
+          return isa<debug::ValueOp>(use.getUser());
+        }))
+      continue;
+    steps.pop_back();
+    path.setNamepathAttr(ArrayAttr::get(&getContext(), steps));
+  }
 
   // Build a mapping of hierarchical path ops.
   DenseSet<StringAttr> leafModules;
@@ -317,10 +394,22 @@ void FlattenModulesPass::runOnOperation() {
         if (auto sym = inst.getInnerSymAttr())
           instanceRef = inst.getInnerRef();
 
+        // Scope for the debug info of the inlined body. It is erased below
+        // if nothing ended up in it.
+        OpBuilder builder(inst);
+        auto debugScope = debug::ScopeOp::create(
+            builder, inst.getLoc(), inst.getInstanceNameAttr(), Value());
+
+        if (auto info = debug::getModuleDescription(module))
+          debugScope.setDefAttr(FlatSymbolRefAttr::get(info.getSymNameAttr()));
+
+        if (inst.getInnerSymAttr())
+          debugScope.setInnerSymAttr(inst.getInnerSymAttr());
+
         PrefixingInliner inliner(&getContext(), inst.getInstanceName(),
                                  nsPtr.get(), parentModule, module,
                                  &oldToNewInnerSyms, &instanceReplacer,
-                                 &pathsTable, instanceRef);
+                                 &pathsTable, instanceRef, debugScope);
 
         if (failed(mlir::inlineRegion(inliner, config.getCloneCallback(),
                                       &module.getBody(), inst,
@@ -333,9 +422,14 @@ void FlattenModulesPass::runOnOperation() {
         }
 
         inst.erase();
-        if (isLastModuleUse)
+        inliner.finalizeDebugScope();
+        if (isLastModuleUse) {
+          if (auto info = debug::getModuleDescription(module))
+            info.removeImplAttr();
           module->erase();
+        }
       }
     }
   }
+  debug::finalizeInstanceDescriptions(getOperation());
 }

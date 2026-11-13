@@ -17,3 +17,17 @@ hw.module @Bar(in %arg0 : i32, in %arg1 : i32, in %arg2 : i32) {
   // CHECK-NEXT: dbg.variable "x", [[TMP]]
   dbg.variable "x", %1 : i32
 }
+
+// The rebuilt instance preserves its debug description target.
+// CHECK-LABEL: hw.module @Baz
+hw.hierpath private @debug_Baz_foo [@Baz::@foo]
+hw.module @Baz(in %arg0 : i32) {
+  // CHECK-NEXT: [[S:%.+]] = dbg.value path @debug_Baz_foo type "S"
+  // CHECK-NEXT: dbg.variable "s", [[S]] : !dbg.value
+  %s = dbg.value path @debug_Baz_foo type "S"
+  dbg.variable "s", %s : !dbg.value
+  // CHECK-NEXT: [[TMP:%.+]] = hw.instance "foo" sym @foo @Foo(arg0: %arg0: i32, arg1: %arg0: i32, arg2: %arg0: i32) -> (out1: i32)
+  %0, %1, %2 = hw.instance "foo" sym @foo @Foo(arg0: %arg0: i32, arg1: %arg0: i32, arg2: %arg0: i32) -> (out0 : i32, out1 : i32, out2 : i32)
+  // CHECK-NEXT: dbg.variable "y", [[TMP]]
+  dbg.variable "y", %1 : i32
+}
